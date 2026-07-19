@@ -472,6 +472,7 @@ const S = {
   docReviews:{},
   syncOn:true,
   customProducts:[],
+  customWorkouts:[],
   shopPage:0,
   recovery:false,
   stepsConnected:false,
@@ -493,7 +494,11 @@ function weightPlan(){
     maintenance = Math.round(bmr*1.45);
   }
   let dailyDelta = Math.round(weeklyKg*7700/7);         // deficit/surplus giornaliero
-  dailyDelta = Math.max(-700, Math.min(700, dailyDelta));// cap sano
+  const goal=S.user.goal||'Mantenimento';
+  if(goal==='Mantenimento'||goal==='Benessere') dailyDelta=0;
+  else if(goal==='Massa') dailyDelta=-300;              // surplus per la crescita
+  else if(goal==='Dimagrimento'){ if(dailyDelta<200) dailyDelta=400; }
+  dailyDelta = Math.max(-500, Math.min(700, dailyDelta));// cap sano
   let kcal = maintenance - dailyDelta;
   kcal = Math.round(kcal/10)*10;
   if(kcal<1300) kcal=1300;                              // soglia sicurezza
@@ -1109,9 +1114,18 @@ function mealSet(){
   return [["colazione","Colazione","🥐"],["spuntino","Spuntino mattina","🍎"],["pranzo","Pranzo","🍲"],["spuntino2","Spuntino pomeriggio","🍏"],["cena","Cena","🐟"]];
 }
 function foodKey(cat){return cat==='spuntino2'?'spuntino':cat;}
+function mealPct(){
+  const n=S.mealsCount||4;
+  if(n<=3) return {colazione:.30,pranzo:.40,cena:.30};
+  if(n===4) return {colazione:.25,pranzo:.35,spuntino:.15,cena:.25};
+  return {colazione:.25,spuntino:.10,pranzo:.30,spuntino2:.10,cena:.25};
+}
+function mealTarget(cat){ const wp=weightPlan(); return Math.floor(wp.kcal*((mealPct()[cat])||0)/10)*10; }
 function adjustKcal(delta){const wp=weightPlan();const cur=S.kcalCustom||wp.baseKcal;let v=Math.round((cur+delta)/10)*10;v=Math.min(wp.hiLim,Math.max(wp.loLim,v));S.kcalCustom=v;save();rebuild('piano');go('piano');toast('Calorie: '+v+' kcal/giorno');}
 function resetKcal(){S.kcalCustom=null;save();rebuild('piano');go('piano');toast('Calorie ripristinate al valore consigliato');}
 function setMeals(n){S.mealsCount=n;S.planChoices={};save();rebuild('piano');go('piano');toast(n+' pasti al giorno');}
+function setGoal(g){S.user.goal=g;S.kcalCustom=null;S.planChoices={};save();rebuild('piano');rebuild('allenamento');rebuild('profilo');go('profilo');toast('Obiettivo: '+g+' · piano e allenamenti aggiornati');}
+function goalNote(){ return ({'Dimagrimento':'deficit calorico e proteine alte per preservare i muscoli','Massa':'leggero surplus con più carboidrati e proteine per crescere','Mantenimento':'calorie di mantenimento con macro bilanciati','Benessere':'equilibrio e cibi nutrienti, senza restrizioni'})[S.user.goal||'Mantenimento']; }
 function dietOk(m){
   const d=S.diet||"Onnivora";
   if(d==="Vegetariana") return m.diet.includes("v")||m.diet.includes("vg");
@@ -1270,16 +1284,19 @@ function planHTML(){
     <div class="seg" id="meals-seg">${[3,4,5].map(n=>`<button class="${(S.mealsCount||4)===n?'on':''}" onclick="setMeals(${n})">${n} pasti</button>`).join('')}</div>
   </div>
 
+  <div class="card"><div class="h">🎯 Ripartizione calorie</div><div class="sub">Obiettivo <b>${S.user.goal}</b>: ${goalNote()}. Le opzioni sono già porzionate per <b>sommare a ${wp.kcal} kcal</b> al giorno sui tuoi ${S.mealsCount||4} pasti — scegline una per pasto e il totale resta nel limite.</div></div>
+
   <div class="section-title">I tuoi pasti · scegli l'opzione</div>
   ${mealSet().map(([cat,label,ic])=>{
+    const target=Math.floor(wp.kcal*((mealPct()[cat])||0)/10)*10;
     const opts=genMeals(cat); const sel=S.planChoices[cat]||(opts[0]&&opts[0].t);
     return `<div class="card">
-      <div class="h">${ic} ${label}<span class="pill">${opts.length} opzioni</span></div>
-      ${opts.map(o=>`
+      <div class="h">${ic} ${label}<span class="pill">~${target} kcal</span></div>
+      ${opts.map(o=>{const f=o.k?target/o.k:1;return `
         <div class="opt ${o.t===sel?'sel':''}" onclick="pickOpt('${cat}',this)" data-t="${encodeURIComponent(o.t)}">
-          <div class="ot"><b>${o.t}</b><span class="kc">${o.k} kcal</span></div>
-          <div class="od">${mealDesc(o)}</div>
-        </div>`).join('')}
+          <div class="ot"><b>${o.t}</b><span class="kc">${target} kcal</span></div>
+          <div class="od">P ${Math.round(o.p*f)} · C ${Math.round(o.c*f)} · G ${Math.round(o.f*f)}${o.diet.includes('vg')?' · vegan':(o.diet.includes('v')?' · veg':'')}</div>
+        </div>`;}).join('')}
       <button class="btn ghost sm" onclick="moreMeals('${cat}')">🔄 Genera altre alternative</button>
     </div>`;
   }).join('')}
@@ -1627,34 +1644,77 @@ function send(){
 }
 
 /* ---------- ALLENAMENTO ---------- */
-const WORKOUTS=[
-  {n:"Forza gambe",d:"40 min · Intermedio",ic:"🦵",k:320,bg:"#fff0e0"},
-  {n:"HIIT brucia grassi",d:"25 min · Avanzato",ic:"🔥",k:280,bg:"var(--coral-s)"},
-  {n:"Yoga & mobilità",d:"30 min · Tutti",ic:"🧘",k:120,bg:"var(--violet-s)"},
-  {n:"Full body a casa",d:"35 min · Base",ic:"🏠",k:250,bg:"var(--mint)"},
-  {n:"Cardio camminata",d:"45 min · Base",ic:"🚶",k:210,bg:"#e8f1ff"}
-];
+const WK={
+ "Dimagrimento":{focus:"Brucia grassi: cardio e circuiti ad alta intensità",list:[
+   {n:"HIIT brucia grassi",d:"25 min · Avanzato",ic:"🔥",k:300,bg:"var(--coral-s)"},
+   {n:"Cardio camminata veloce",d:"45 min · Base",ic:"🚶",k:230,bg:"#e8f1ff"},
+   {n:"Circuito total body",d:"30 min · Intermedio",ic:"🔁",k:280,bg:"var(--mint)"},
+   {n:"Tabata addome",d:"15 min · Avanzato",ic:"⏱️",k:180,bg:"#fff0e0"},
+   {n:"Corsa intervallata",d:"30 min · Intermedio",ic:"🏃",k:320,bg:"#e8f1ff"}
+ ]},
+ "Massa":{focus:"Ipertrofia: forza e volume con sovraccarichi",list:[
+   {n:"Forza gambe",d:"50 min · Intermedio",ic:"🦵",k:340,bg:"#fff0e0"},
+   {n:"Push · petto/spalle/tricipiti",d:"50 min · Intermedio",ic:"💪",k:300,bg:"var(--mint)"},
+   {n:"Pull · schiena/bicipiti",d:"50 min · Intermedio",ic:"🏋️",k:300,bg:"var(--violet-s)"},
+   {n:"Upper body volume",d:"45 min · Avanzato",ic:"🔺",k:280,bg:"#e8f1ff"},
+   {n:"Gambe & glutei forza",d:"55 min · Avanzato",ic:"🍑",k:360,bg:"var(--coral-s)"}
+ ]},
+ "Mantenimento":{focus:"Equilibrio: forza e cardio moderato",list:[
+   {n:"Full body a casa",d:"35 min · Base",ic:"🏠",k:250,bg:"var(--mint)"},
+   {n:"Forza total body",d:"40 min · Intermedio",ic:"🏋️",k:280,bg:"#fff0e0"},
+   {n:"Cardio moderato",d:"30 min · Base",ic:"🚴",k:220,bg:"#e8f1ff"},
+   {n:"Mobilità & core",d:"25 min · Tutti",ic:"🧘",k:130,bg:"var(--violet-s)"},
+   {n:"Camminata attiva",d:"45 min · Base",ic:"🚶",k:210,bg:"#e8f1ff"}
+ ]},
+ "Benessere":{focus:"Movimento dolce: mobilità, respiro, energia",list:[
+   {n:"Yoga & mobilità",d:"30 min · Tutti",ic:"🧘",k:120,bg:"var(--violet-s)"},
+   {n:"Stretching completo",d:"20 min · Tutti",ic:"🤸",k:90,bg:"var(--mint)"},
+   {n:"Pilates soft",d:"30 min · Base",ic:"🧎",k:150,bg:"var(--coral-s)"},
+   {n:"Camminata nella natura",d:"40 min · Base",ic:"🌳",k:180,bg:"#e8f1ff"},
+   {n:"Respirazione & rilassamento",d:"15 min · Tutti",ic:"🌬️",k:40,bg:"var(--violet-s)"}
+ ]}
+};
 function allenamentoHTML(){
+  const goal=S.user.goal||'Mantenimento'; const prog=WK[goal]||WK['Mantenimento']; const first=prog.list[0];
+  const custom=S.customWorkouts||[];
   return `
   <button class="back" onclick="go('home')">← Indietro</button>
-  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Adattato alla tua fase · energia alta</div><div class="n">Allenamento</div></div></div>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Programma per: ${goal}</div><div class="n">Allenamento</div></div></div>
 
-  <div class="grid3" style="margin-bottom:16px">
-    <div class="stat"><div class="ico" style="background:#fff0e0;color:var(--amber)">🔥</div><div class="v">320</div><div class="l">kcal target</div></div>
-    <div class="stat"><div class="ico" style="background:var(--mint);color:var(--green-d)">✅</div><div class="v">3/5</div><div class="l">settimana</div></div>
-    <div class="stat"><div class="ico" style="background:var(--violet-s);color:var(--violet)">⏱️</div><div class="v">4.2h</div><div class="l">totali</div></div>
-  </div>
+  <div class="banner gg"><span class="b-ic">🏋️</span><h4>Consigliato oggi · ${first.n}</h4><p>${prog.focus}. ${first.d}.</p></div>
 
-  <div class="banner gg"><span class="b-ic">🏋️</span><h4>Consigliato oggi · Forza gambe</h4><p>In fase follicolare il corpo tollera meglio i carichi. 40 minuti, 6 esercizi.</p></div>
+  ${canSell()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo allenamento (video)</button>`:''}
 
-  <div class="section-title" style="margin-top:0">Libreria allenamenti</div>
-  ${WORKOUTS.map(w=>`
+  ${custom.length?`<div class="section-title" style="margin-top:0">Allenamenti dei creator 🎬</div>
+  ${custom.map((w,i)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><button class="btn sm" style="width:auto;padding:10px 14px;align-self:center" onclick="playVideo('${w.video}')">▶</button></div>`).join('')}`:''}
+
+  <div class="section-title" ${custom.length?'':'style="margin-top:0"'}>Libreria per il tuo obiettivo</div>
+  ${prog.list.map(w=>`
     <div class="pro">
       <div class="ph" style="background:${w.bg}">${w.ic}</div>
       <div class="pi"><b>${w.n}</b><small>${w.d} · ~${w.k} kcal</small></div>
       <button class="btn sm" style="width:auto;padding:10px 14px;align-self:center" onclick="toast('Avvio: ${w.n} ▶')">▶</button>
     </div>`).join('')}
+  <div class="tiny">Cambiando obiettivo nel Profilo, cambiano sia i pasti sia gli allenamenti.</div>
   `;
+}
+function addWorkout(){
+  if(!canSell()){toast('Solo i professionisti verificati possono caricare allenamenti');return;}
+  const n=prompt('Nome allenamento:'); if(!n||!n.trim())return;
+  const d=prompt('Durata e livello (es. 40 min · Intermedio):','30 min · Intermedio')||'';
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
+  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
+    let url=URL.createObjectURL(f);
+    if(cloudOn()&&loggedIn()){ toast('Caricamento video…'); try{ url=await uploadBlob(f,f.name||'workout.mp4'); }catch(e){ toast('Cloud non riuscito, uso locale'); } }
+    S.customWorkouts=S.customWorkouts||[]; S.customWorkouts.unshift({n:n.trim(),d:d.trim(),video:url,by:S.user.name});
+    save(); rebuild('allenamento'); go('allenamento'); toast('Allenamento pubblicato 🎬');
+  };
+  inp.click();
+}
+function playVideo(url){
+  const ov=document.createElement('div'); ov.className='cam-ov'; ov.style.background='#000';
+  ov.innerHTML=`<video src="${url}" style="width:100%;height:100%;object-fit:contain" controls autoplay playsinline></video><button class="cam-close" onclick="this.parentNode.remove()">✕</button>`;
+  document.querySelector('.phone').appendChild(ov);
 }
 
 /* ---------- PROMEMORIA ---------- */
@@ -1700,7 +1760,8 @@ function profiloHTML(){
 
   <div class="card">
     <div class="h">🎯 Obiettivo</div>
-    <div class="seg" id="goal-seg">${["Dimagrimento","Mantenimento","Massa","Benessere"].map((g,i)=>`<button class="${g===S.user.goal?'on':''}" onclick="segPick('goal-seg',this);S.user.goal=this.textContent;toast('Obiettivo: '+this.textContent)">${g}</button>`).join('')}</div>
+    <div class="seg" id="goal-seg">${["Dimagrimento","Mantenimento","Massa","Benessere"].map((g,i)=>`<button class="${g===S.user.goal?'on':''}" onclick="setGoal('${g}')">${g}</button>`).join('')}</div>
+    <div class="sub" style="margin-top:8px">Cambiando obiettivo si riadattano automaticamente sia il piano alimentare (calorie e macro) sia gli allenamenti.</div>
   </div>
 
   <div class="card tight">
