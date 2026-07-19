@@ -324,9 +324,10 @@ body{
 /* editor video */
 .editor{position:absolute;inset:0;z-index:126;background:#000;display:none;flex-direction:column;border-radius:40px;overflow:hidden}
 .editor.open{display:flex}
-.ed-stage{position:relative;flex:1;overflow:hidden;background:#000}
-.ed-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.ed-ov{position:absolute;left:50%;transform:translateX(-50%);color:#fff;font-weight:800;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;padding:2px 10px;max-width:88%;cursor:pointer;line-height:1.2}
+.ed-stage{position:relative;flex:1;overflow:hidden;background:#000;touch-action:none}
+.ed-stage video,.ed-stage img.ed-base{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.ed-ov{position:absolute;color:#fff;font-weight:800;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;padding:2px 10px;max-width:88%;cursor:grab;line-height:1.2;touch-action:none;user-select:none;-webkit-user-select:none}
+.ed-ov img{max-width:130px;max-height:130px;border-radius:10px;display:block;pointer-events:none}
 .ed-top{position:absolute;top:calc(12px + env(safe-area-inset-top,0));left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;z-index:4}
 .ed-tools{position:absolute;right:12px;top:calc(64px + env(safe-area-inset-top,0));display:flex;flex-direction:column;gap:12px;z-index:4}
 .ed-tools button{background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:14px;padding:9px 0;width:58px;font-size:11px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
@@ -452,6 +453,7 @@ const S = {
     {who:"Dr.ssa Bianchi", spec:"Nutrizionista", when:"Mar 22 lug · 10:00", ic:"🥗", mode:"Video"},
     {who:"Dr. Ferrari", spec:"Medico estetico", when:"Gio 24 lug · 15:30", ic:"✨", mode:"In studio"}
   ],
+  booked:[],
   today:[
     {time:"07:30",t:"Pesati e registra il peso",ic:"⚖️",done:true,link:"home"},
     {time:"08:00",t:"Colazione",meal:0,ic:"🥐",done:true,link:"piano"},
@@ -482,6 +484,7 @@ const S = {
   shopPage:0,
   recovery:false,
   stepsConnected:false,
+  workoutKcal:0,
   health:{interventi:"",diabete:"No",intolleranze:[],patologie:[],farmaci:"",gravidanza:false,note:""}
 };
 let onbData={sex:"F",goal:"Dimagrimento",diabete:"No",role:"Utente"};
@@ -528,7 +531,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -633,17 +636,22 @@ async function persistEdit(state,file){
   if(voice&&voice.startsWith&&voice.startsWith('data:')){ voice=await dataUrlToUrl(voice,'voice.webm'); }
   return {video_url:url, music, voiceover:voice};
 }
+function stripExtraCols(row){ const r={...row}; delete r.is_image; delete r.flip; return r; }
 async function cloudSaveDraft(state,file){
   const p=await persistEdit(state,file);
-  const row={user_id:cloudUser.id, caption:state.caption||'', type:state.type||'Video', overlays:state.overlays||[], music:p.music||null, voiceover:p.voiceover||null, mute:!!state.muteOriginal, video_url:p.video_url};
-  if(state.cloudId){ await SB.from('drafts').update(row).eq('id',state.cloudId); return state.cloudId; }
-  const {data,error}=await SB.from('drafts').insert(row).select().single(); if(error)throw error; return data.id;
+  const row={user_id:cloudUser.id, caption:state.caption||'', type:state.type||'Video', overlays:state.overlays||[], music:p.music||null, voiceover:p.voiceover||null, mute:!!state.muteOriginal, is_image:!!state.isImage, flip:!!state.flip, video_url:p.video_url};
+  if(state.cloudId){ let {error}=await SB.from('drafts').update(row).eq('id',state.cloudId); if(error&&/column/.test(error.message||''))await SB.from('drafts').update(stripExtraCols(row)).eq('id',state.cloudId); return state.cloudId; }
+  let {data,error}=await SB.from('drafts').insert(row).select().single();
+  if(error&&/column/.test(error.message||'')){ const r2=await SB.from('drafts').insert(stripExtraCols(row)).select().single(); data=r2.data; error=r2.error; }
+  if(error)throw error; return data.id;
 }
 async function cloudLoadDrafts(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('drafts').select('*').order('created_at',{ascending:false}); if(error)throw error; return data||[]; }catch(e){ return []; } }
 async function cloudDeleteDraft(id){ try{ await SB.from('drafts').delete().eq('id',id); }catch(e){} }
 async function cloudPublishEdit(state,file){
   const p=await persistEdit(state,file);
-  const {error}=await SB.from('posts').insert({user_id:cloudUser.id, author:(S.user.name||'utente'), caption:state.caption||'Il mio short', type:state.type||'Video', diet:S.diet, goal:S.user.goal, video_url:p.video_url, likes:0, overlays:state.overlays||[], music:p.music||null, voiceover:p.voiceover||null, mute:!!state.muteOriginal});
+  const row={user_id:cloudUser.id, author:(S.user.name||'utente'), caption:state.caption||'Il mio short', type:state.type||'Video', diet:S.diet, goal:S.user.goal, video_url:p.video_url, likes:0, overlays:state.overlays||[], music:p.music||null, voiceover:p.voiceover||null, mute:!!state.muteOriginal, is_image:!!state.isImage, flip:!!state.flip};
+  let {error}=await SB.from('posts').insert(row);
+  if(error&&/column/.test(error.message||'')){ const r2=await SB.from('posts').insert(stripExtraCols(row)); error=r2.error; }
   if(error)throw error;
   if(state.cloudId){ await cloudDeleteDraft(state.cloudId); }
 }
@@ -740,6 +748,19 @@ function startPedometer(){
   });
 }
 function updateStepsUI(){ const el=document.getElementById('steps-val'); if(el) el.textContent=((S.steps||0)/1000).toFixed(1)+'k'; }
+/* ===== calorie bruciate in base ai dati fisici ===== */
+function kcalFromSteps(){ const w=S.wNow||65; return Math.round((S.steps||0)*w*0.0004); }
+function burnedToday(){ return kcalFromSteps()+(S.workoutKcal||0); }
+function logWorkoutDone(name,baseK,minutes){
+  const w=S.wNow||65;
+  let kcal;
+  if(baseK){ kcal=Math.round(baseK*w/65); }
+  else { kcal=Math.round(5*w*((minutes||30)/60)); } // MET ~5 se sconosciuto
+  S.workoutKcal=(S.workoutKcal||0)+kcal; save(); rebuild('home'); rebuild('allenamento');
+  toast('💪 '+name+': ~'+kcal+' kcal bruciate (sul tuo peso)');
+}
+function resetBurned(){ S.workoutKcal=0; save(); rebuild('home'); toast('Calorie allenamento azzerate'); }
+function workoutDoneMinutes(name){ const m=parseInt(prompt('Quanti minuti è durato "'+name+'"?','30')); if(isNaN(m)||m<=0){toast('Durata non valida');return;} logWorkoutDone(name,0,m); }
 
 /* ============ AI VISION reale (Claude) ============ */
 async function callVision(img,prompt){
@@ -821,7 +842,8 @@ function screen(id,html){const d=document.createElement('div');d.className='scre
 /* ---------- HOME ---------- */
 function homeHTML(){
   const wp=weightPlan();
-  const kc=S.intake.kcal, kg=S.user.kcalGoal, left=kg-kc;
+  const burned=burnedToday();
+  const kc=S.intake.kcal, kg=S.user.kcalGoal, left=kg-kc+burned;
   return `
   <div class="topbar">
     <div class="hello"><div class="k">Domenica, 19 luglio</div><div class="n">Ciao, ${S.user.name} 👋</div></div>
@@ -830,14 +852,15 @@ function homeHTML(){
 
   <div class="card">
     <div class="ring-wrap">
-      <div class="ring">${ring(kc/kg,'var(--green)')}
+      <div class="ring">${ring(kc/(kg+burned||1),'var(--green)')}
         <div class="c-val"><b>${left>0?left:0}</b><small>kcal rimaste</small></div></div>
       <div class="macros">
-        <div class="macro"><div class="lbl"><span>Proteine</span><span>${S.intake.prot}/120 g</span></div><div class="bar"><i style="width:${S.intake.prot/120*100}%;background:var(--green)"></i></div></div>
-        <div class="macro"><div class="lbl"><span>Carboidrati</span><span>${S.intake.carb}/200 g</span></div><div class="bar"><i style="width:${S.intake.carb/200*100}%;background:var(--amber)"></i></div></div>
-        <div class="macro"><div class="lbl"><span>Grassi</span><span>${S.intake.fat}/60 g</span></div><div class="bar"><i style="width:${S.intake.fat/60*100}%;background:var(--coral)"></i></div></div>
+        <div class="macro"><div class="lbl"><span>Introdotte</span><span>${kc} kcal</span></div><div class="bar"><i style="width:${Math.min(100,kc/kg*100)}%;background:var(--green)"></i></div></div>
+        <div class="macro"><div class="lbl"><span>🔥 Bruciate</span><span>${burned} kcal</span></div><div class="bar"><i style="width:${Math.min(100,burned/500*100)}%;background:var(--coral)"></i></div></div>
+        <div class="macro"><div class="lbl"><span>Obiettivo</span><span>${kg} kcal</span></div><div class="bar"><i style="width:100%;background:var(--line)"></i></div></div>
       </div>
     </div>
+    <div class="sub" style="margin-top:12px;text-align:center">🔥 Oggi hai bruciato <b>${burned} kcal</b> (${kcalFromSteps()} dai passi${S.workoutKcal?' + '+S.workoutKcal+' allenamento':''}) — sommate al tuo budget${S.workoutKcal?` · <a onclick="resetBurned()" style="color:var(--green-d);cursor:pointer">azzera</a>`:''}</div>
   </div>
 
   <div class="grid3" style="margin-bottom:${S.stepsConnected?'16px':'8px'}">
@@ -988,14 +1011,69 @@ function editWeight(){
   rebuild('home');rebuild('piano');go('home');
   toast('Peso aggiornato · piano ricalcolato: '+wp.kcal+' kcal');
 }
-function addFood(meal){
-  const f=prompt('Cosa hai mangiato?'); if(!f||!f.trim())return;
-  const kv=prompt('Quante calorie (kcal)? (lascia vuoto se non lo sai)','200');
-  const k=parseInt(kv); if(isNaN(k)){toast('Calorie non valide');return;}
-  S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto', f:f.trim(), k});
-  S.intake.kcal+=k;
-  save(); rebuild('diario'); rebuild('home'); toast('Aggiunto: '+f.trim()+' · '+k+' kcal');
+/* Database alimenti singoli · kcal per 100 g (fonte: valori medi CREA/USDA) */
+const INGREDIENTS=[
+ {n:"Petto di pollo",e:"🍗",k:165,p:31},{n:"Fesa di tacchino",e:"🦃",k:135,p:29},{n:"Manzo magro",e:"🥩",k:180,p:26},
+ {n:"Bresaola",e:"🥓",k:151,p:32},{n:"Prosciutto crudo",e:"🍖",k:224,p:26},{n:"Prosciutto cotto",e:"🍖",k:145,p:20},
+ {n:"Salmone",e:"🐟",k:208,p:20},{n:"Merluzzo",e:"🐟",k:82,p:18},{n:"Tonno al naturale",e:"🐟",k:116,p:26},
+ {n:"Gamberi",e:"🦐",k:99,p:24},{n:"Uovo intero",e:"🥚",k:143,p:13},{n:"Albume",e:"🥚",k:52,p:11},
+ {n:"Yogurt greco 0%",e:"🥛",k:59,p:10},{n:"Yogurt intero",e:"🥛",k:61,p:4},{n:"Skyr",e:"🥛",k:63,p:11},
+ {n:"Latte parz. scremato",e:"🥛",k:46,p:3},{n:"Ricotta",e:"🧀",k:146,p:11},{n:"Mozzarella",e:"🧀",k:253,p:18},
+ {n:"Parmigiano",e:"🧀",k:392,p:33},{n:"Feta",e:"🧀",k:264,p:14},{n:"Grana",e:"🧀",k:398,p:33},
+ {n:"Pasta secca",e:"🍝",k:353,p:12},{n:"Pasta integrale",e:"🍝",k:340,p:13},{n:"Riso bianco",e:"🍚",k:332,p:7},
+ {n:"Riso basmati",e:"🍚",k:349,p:8},{n:"Riso integrale",e:"🍚",k:337,p:8},{n:"Quinoa",e:"🌾",k:368,p:14},
+ {n:"Pane integrale",e:"🍞",k:244,p:9},{n:"Pane bianco",e:"🍞",k:265,p:9},{n:"Fette biscottate",e:"🍘",k:408,p:12},
+ {n:"Avena",e:"🥣",k:389,p:17},{n:"Cous cous",e:"🌾",k:376,p:13},{n:"Patate",e:"🥔",k:77,p:2},
+ {n:"Patate dolci",e:"🍠",k:86,p:2},{n:"Legumi lessati (media)",e:"🫘",k:120,p:8},{n:"Lenticchie lessate",e:"🫘",k:116,p:9},
+ {n:"Ceci lessati",e:"🫘",k:164,p:9},{n:"Fagioli lessati",e:"🫘",k:127,p:9},{n:"Tofu",e:"🧊",k:76,p:8},
+ {n:"Tempeh",e:"🧊",k:192,p:19},{n:"Broccoli",e:"🥦",k:34,p:3},{n:"Spinaci",e:"🥬",k:23,p:3},
+ {n:"Zucchine",e:"🥒",k:17,p:1},{n:"Pomodori",e:"🍅",k:18,p:1},{n:"Insalata",e:"🥗",k:15,p:1},
+ {n:"Carote",e:"🥕",k:41,p:1},{n:"Peperoni",e:"🫑",k:26,p:1},{n:"Melanzane",e:"🍆",k:25,p:1},
+ {n:"Funghi",e:"🍄",k:22,p:3},{n:"Avocado",e:"🥑",k:160,p:2},{n:"Banana",e:"🍌",k:89,p:1},
+ {n:"Mela",e:"🍎",k:52,p:0},{n:"Arancia",e:"🍊",k:47,p:1},{n:"Fragole",e:"🍓",k:32,p:1},
+ {n:"Mirtilli",e:"🫐",k:57,p:1},{n:"Uva",e:"🍇",k:69,p:1},{n:"Pera",e:"🍐",k:57,p:0},
+ {n:"Kiwi",e:"🥝",k:61,p:1},{n:"Ananas",e:"🍍",k:50,p:1},{n:"Mandorle",e:"🌰",k:579,p:21},
+ {n:"Noci",e:"🌰",k:654,p:15},{n:"Arachidi",e:"🥜",k:567,p:26},{n:"Burro d'arachidi",e:"🥜",k:588,p:25},
+ {n:"Olio d'oliva",e:"🫒",k:884,p:0},{n:"Burro",e:"🧈",k:717,p:1},{n:"Miele",e:"🍯",k:304,p:0},
+ {n:"Cioccolato fondente",e:"🍫",k:546,p:8},{n:"Zucchero",e:"🧂",k:387,p:0},{n:"Marmellata",e:"🍓",k:250,p:0},
+ {n:"Pizza margherita",e:"🍕",k:266,p:11},{n:"Gnocchi",e:"🥟",k:157,p:4},{n:"Hummus",e:"🥣",k:166,p:8}
+];
+function addFood(meal){ S._addMeal=meal||'Pasto'; _fq=''; go('addfood'); }
+let _fq='';
+function addfoodHTML(){
+  const q=(_fq||'').toLowerCase();
+  const list=INGREDIENTS.filter(x=>x.n.toLowerCase().includes(q));
+  return `<button class="back" onclick="go('diario')">← Indietro</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${S._addMeal||'Pasto'}</div><div class="n">Aggiungi cibo</div></div></div>
+  <div class="card" style="padding:12px">
+    <input id="food-q" placeholder="🔍 Cerca un alimento…" value="${(_fq||'').replace(/"/g,'&quot;')}" oninput="_fq=this.value;rebuild('addfood');setTimeout(()=>{const el=document.getElementById('food-q');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},0)" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;font-size:14px;margin-bottom:6px">
+    <div class="sub" style="margin-bottom:8px">Inserisci i <b>grammi</b>: le calorie si calcolano da sole (valori per 100 g). Puoi comunque correggerle.</div>
+    <div style="max-height:52vh;overflow-y:auto">
+    ${list.length?list.map(x=>{const id=x.n.replace(/[^a-zA-Z]/g,'');return `<div class="row" style="align-items:center">
+      <div class="ri" style="background:var(--mint)">${x.e}</div>
+      <div class="rt" style="flex:1"><b>${x.n}</b><small>${x.k} kcal / 100 g</small>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <input id="g-${id}" type="number" placeholder="g" min="0" oninput="fCalc('${id}',${x.k})" style="width:60px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font-size:13px"><small>g →</small>
+          <input id="k-${id}" type="number" placeholder="kcal" min="0" style="width:66px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font-size:13px"><small>kcal</small>
+        </div>
+      </div>
+      <button onclick="fAdd('${id}','${x.n.replace(/'/g,'')}',${x.p})" style="background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer">＋</button>
+    </div>`;}).join(''):'<div class="sub" style="text-align:center;padding:20px">Nessun alimento trovato. <a onclick="fCustom()" style="color:var(--green-d);font-weight:700;cursor:pointer">Inseriscilo a mano</a></div>'}
+    </div>
+    <button class="btn sec sm" style="margin-top:10px" onclick="fCustom()">✍️ Alimento non in lista</button>
+  </div>`;
 }
+function fCalc(id,kper100){ const g=parseFloat((document.getElementById('g-'+id)||{}).value)||0; const kEl=document.getElementById('k-'+id); if(kEl)kEl.value=Math.round(kper100*g/100); }
+function fAdd(id,name,pPer100){ const g=parseFloat((document.getElementById('g-'+id)||{}).value)||0; const k=parseFloat((document.getElementById('k-'+id)||{}).value)||0;
+  if(!k){toast('Inserisci i grammi o le calorie');return;}
+  const prot=g?Math.round(pPer100*g/100):0;
+  S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:name+(g?' ('+g+'g)':''),k:Math.round(k),prot});
+  S.intake.kcal+=Math.round(k); S.intake.prot=(S.intake.prot||0)+prot;
+  save(); toast('Aggiunto: '+name+' · '+Math.round(k)+' kcal'); rebuild('home');
+  const gEl=document.getElementById('g-'+id); if(gEl)gEl.value=''; const kEl=document.getElementById('k-'+id); if(kEl)kEl.value='';
+}
+function fCustom(){ const f=prompt('Nome alimento:'); if(!f||!f.trim())return; const kv=prompt('Quante calorie (kcal)?','200'); const k=parseInt(kv); if(isNaN(k)){toast('Calorie non valide');return;}
+  S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:f.trim(),k}); S.intake.kcal+=k; save(); rebuild('home'); toast('Aggiunto: '+f.trim()+' · '+k+' kcal'); go('diario'); }
 function rmFood(i){ if(i<0||!S.foodLog||!S.foodLog[i])return; const it=S.foodLog[i]; S.intake.kcal=Math.max(0,S.intake.kcal-(it.k||0)); S.intake.prot=Math.max(0,S.intake.prot-(it.prot||0)); S.foodLog.splice(i,1); save(); rebuild('diario'); rebuild('home'); toast('Rimosso'); }
 function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); save(); }
 
@@ -1031,19 +1109,52 @@ async function scanMeal(img){
   }
   setTimeout(()=>renderMeal(r,photo,MEAL_DEMO,false),900);
 }
+let _scanItems=[], _scanReal=false, _scanMatch=0, _scanPhoto='';
 function renderMeal(r,photo,j,real){
-  const items=(j.items||[]);
-  const tot=j.total||{kcal:items.reduce((a,b)=>a+(b.kcal||0),0),prot:0,carb:0,fat:0};
+  _scanItems=(j.items||[]).map(it=>({food:it.food||it.name||'Alimento',emoji:it.emoji||'🍽️',grams:+it.grams||100,kcal:+it.kcal||0,prot:+it.prot||0,carb:+it.carb||0,fat:+it.fat||0}));
+  // memorizza kcal per grammo così, correggendo i grammi, si ricalcolano le calorie
+  _scanItems.forEach(it=>{ it.kpg = it.grams>0 ? it.kcal/it.grams : 0; });
+  _scanReal=real; _scanMatch=j.match||0; _scanPhoto=photo;
+  drawScanEditor(r);
+}
+function drawScanEditor(r){
+  r=r||document.getElementById('scan-res'); if(!r)return;
+  const items=_scanItems;
+  const tot=items.reduce((a,b)=>a+(+b.kcal||0),0);
+  const totP=items.reduce((a,b)=>a+(+b.prot||0),0);
   r.innerHTML=`
     <div class="card">
-      ${photo}
-      <div class="h">${items.length?'✅ Piatto riconosciuto':'🤔 Nessun cibo rilevato'} <span class="pill">${real?'AI reale':'demo'}${j.match?' · '+j.match+'%':''}</span></div>
-      ${items.map(it=>`<div class="row"><div class="ri" style="background:var(--mint)">${it.emoji||'🍽️'}</div><div class="rt"><b>${it.food||it.name}</b><small>≈ ${it.grams||'?'} g</small></div><div class="rv">${it.kcal||0}<small>kcal</small></div></div>`).join('')}
+      ${_scanPhoto}
+      <div class="h">${items.length?'✅ Piatto riconosciuto':'🤔 Nessun cibo rilevato'} <span class="pill">${_scanReal?'AI reale':'demo'}${_scanMatch?' · '+_scanMatch+'%':''}</span></div>
+      ${items.length?'<div class="sub" style="margin-bottom:8px">✏️ Correggi grammi o calorie se l\'AI ha sbagliato — il totale si aggiorna da solo.</div>':''}
+      ${items.map((it,i)=>`<div class="row" style="align-items:center">
+        <div class="ri" style="background:var(--mint)">${it.emoji||'🍽️'}</div>
+        <div class="rt" style="flex:1"><b>${(it.food||'').replace(/</g,'&lt;')}</b>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+            <input type="number" value="${it.grams}" min="0" oninput="scanEdit(${i},'grams',this.value)" style="width:62px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font-size:13px"><small>g</small>
+            <input type="number" value="${it.kcal}" min="0" oninput="scanEdit(${i},'kcal',this.value)" style="width:66px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font-size:13px"><small>kcal</small>
+          </div>
+        </div>
+        <button onclick="scanDel(${i})" style="background:none;border:none;color:var(--rose,#ff6f8b);font-size:18px;cursor:pointer">🗑</button>
+      </div>`).join('')}
+      <button class="btn ghost sm" style="margin-top:6px" onclick="scanAddRow()">＋ Aggiungi un alimento</button>
       ${items.length?`<div class="divider"></div>
-      <div class="row"><div class="rt"><b>Totale stimato</b><small>P ${tot.prot||0}g · C ${tot.carb||0}g · G ${tot.fat||0}g</small></div><div class="rv" style="color:var(--green-d)">${tot.kcal||0}<small>kcal</small></div></div>
-      <button class="btn" style="margin-top:12px" onclick="logMeal('${(items.map(it=>it.food||it.name).join(', ')||'Pasto').replace(/'/g,'')}',${tot.kcal||0},${tot.prot||0},'Pasto');rebuild('home');rebuild('diario');toast('Pasto salvato nel diario');go('diario')">Salva nel diario</button>`:''}
+      <div class="row"><div class="rt"><b>Totale</b><small>proteine ≈ ${Math.round(totP)} g</small></div><div class="rv" style="color:var(--green-d)">${Math.round(tot)}<small>kcal</small></div></div>
+      <button class="btn" style="margin-top:12px" onclick="saveScan()">Salva nel diario</button>`:''}
     </div>`;
 }
+function scanEdit(i,field,val){ const it=_scanItems[i]; if(!it)return; const n=parseFloat(val)||0;
+  if(field==='grams'){ it.grams=n; if(it.kpg)it.kcal=Math.round(it.kpg*n); }
+  else if(field==='kcal'){ it.kcal=n; it.kpg = it.grams>0 ? n/it.grams : 0; }
+  // aggiorna solo il totale senza ridisegnare (per non perdere il focus)
+  const tot=_scanItems.reduce((a,b)=>a+(+b.kcal||0),0);
+  const rv=document.querySelector('#scan-res .divider ~ .row .rv'); if(rv)rv.innerHTML=Math.round(tot)+'<small>kcal</small>';
+  // se ho corretto i grammi, aggiorno il campo kcal collegato
+  if(field==='grams'){ const inp=document.querySelectorAll('#scan-res .row')[i]; if(inp){const ks=inp.querySelectorAll('input')[1]; if(ks)ks.value=it.kcal;} }
+}
+function scanDel(i){ _scanItems.splice(i,1); drawScanEditor(); }
+function scanAddRow(){ const f=prompt('Nome alimento:'); if(!f||!f.trim())return; _scanItems.push({food:f.trim(),emoji:'🍽️',grams:100,kcal:0,kpg:0,prot:0}); drawScanEditor(); }
+function saveScan(){ const names=_scanItems.map(it=>it.food).join(', ')||'Pasto'; const tot=_scanItems.reduce((a,b)=>a+(+b.kcal||0),0); const totP=_scanItems.reduce((a,b)=>a+(+b.prot||0),0); logMeal(names,Math.round(tot),Math.round(totP),'Pasto'); rebuild('home'); rebuild('diario'); toast('Pasto salvato nel diario'); go('diario'); }
 
 /* ---------- PIANO NUTRIZIONALE ---------- */
 /* ===== DATABASE ALIMENTI ===== diet: v=vegetariana, vg=vegana, lc=low-carb (onnivora = tutti) */
@@ -1149,6 +1260,28 @@ function dislikedOk(m){
   const hay=(m.t+' '+m.ing.join(' ')).toLowerCase();
   return !dis.some(d=> hay.includes(d));
 }
+/* ---- Adattamento alla STORIA CLINICA ---- */
+const GLUTEN=['pane','pasta','avena','cous cous','couscous','orzo','farro','segale','granola','pancake','toast','fette biscottate','cracker','gallette','french toast','bulgur','seitan','muesli'];
+function hayOf(m){ return (m.t+' '+(m.ing||[]).join(' ')).toLowerCase(); }
+function clinicalOk(m){
+  const pat=(S.health&&S.health.patologie||[]);
+  if(pat.includes('Celiachia')){ const hay=hayOf(m); if(GLUTEN.some(g=>hay.includes(g))) return false; }
+  return true;
+}
+// penalità 0 = ok; più alta = meno adatto alla storia clinica
+function clinicalScore(m){
+  const h=S.health||{}; const pat=h.patologie||[]; const hay=hayOf(m); let s=0;
+  const has=arr=>arr.some(k=>hay.includes(k));
+  if(h.diabete&&h.diabete!=='No'){ if(has(['miele','sciroppo','zucchero','marmellata','banana','granola','pancake','french toast','budino','mango']))s+=3; if((m.c||0)>55)s+=1; }
+  if(pat.includes('Colesterolo alto')){ if(has(['burro','fritt','pancetta','salsiccia','formaggio','feta','uova','pecorino','mascarpone']))s+=2; if((m.f||0)>18)s+=1; }
+  if(pat.includes('Ipertensione')){ if(has(['prosciutto','bresaola','salame','olive','feta','affettat','wurstel','acciughe','salato','speck']))s+=2; }
+  if(pat.includes('Gastrite/reflusso')){ if(has(['pomodoro','piccante','curry','fritt','caffè','peperonc','agrumi','cioccolato','menta']))s+=2; }
+  if(pat.includes('Colon irritabile')){ if(has(['legumi','ceci','lenticchie','fagioli','cavolo','broccoli','cipolla','aglio','latte']))s+=2; }
+  if(pat.includes('Reni')){ if((m.p||0)>32)s+=2; if(has(['proteico','proteine']))s+=1; }
+  if(pat.includes('Anemia')){ if(has(['manzo','spinaci','lenticchie','bistecca','fegato','ceci','legumi']))s-=1; }
+  if(pat.includes('Tiroide')){ if(has(['cavolo','soia','tofu','tempeh','edamame']))s+=1; }
+  return s;
+}
 const SWEET=['banana','cacao','miele','frutti','mela','ciocc','pancake','porridge','avena','sciroppo','budino','macedonia','overnight','french toast','mango','pere','mirtilli','cannella','granola','vaniglia','yogurt','skyr','ricotta','frullato','smoothie','pop corn','fondente'];
 const SALTY=['feta','tonno','pollo','salmone','uova','albumi','formaggio','hummus','olive','tacchino','cracker','edamame','gamberi','merluzzo','frittata','curry','pesto','ceci','lenticchie','tofu','platessa','orata','branzino','tempeh','manzo','bistecca','zuppa','cous cous','gallette','avocado','quinoa','riso','patate'];
 function craveMatch(m,crave){const hay=(m.t+' '+m.ing.join(' ')).toLowerCase();const arr=crave==='Dolce'?SWEET:SALTY;return arr.some(k=>hay.includes(k));}
@@ -1159,7 +1292,8 @@ function seededShuffle(arr,seed){
 }
 function availMeals(cat){
   const key=foodKey(cat);
-  let list=FOODS[key].filter(m=>dietOk(m)&&dislikedOk(m));
+  let list=FOODS[key].filter(m=>dietOk(m)&&dislikedOk(m)&&clinicalOk(m));
+  if(!list.length) list=FOODS[key].filter(m=>dislikedOk(m)&&clinicalOk(m));
   if(!list.length) list=FOODS[key].filter(dislikedOk);
   if(!list.length) list=FOODS[key].slice();
   return list;
@@ -1169,6 +1303,9 @@ function genMeals(cat){
   const list=availMeals(cat);
   const seed=((S.mealOffset&&S.mealOffset[cat])||0)+1+catSalt(cat);
   let sh=seededShuffle(list,seed);
+  // adatta alla storia clinica: i pasti più adatti vengono prima
+  const hasClinic=(S.health&&((S.health.patologie||[]).length||(S.health.diabete&&S.health.diabete!=='No')));
+  if(hasClinic){ sh=sh.map((m,i)=>({m,sc:clinicalScore(m),i})).sort((a,b)=>a.sc-b.sc||a.i-b.i).map(x=>x.m); }
   if(S.cravings==='Dolce'||S.cravings==='Salato'){
     const yes=sh.filter(m=>craveMatch(m,S.cravings)), no=sh.filter(m=>!craveMatch(m,S.cravings));
     sh=yes.concat(no);
@@ -1238,7 +1375,7 @@ function planHTML(){
   <div class="card">
     <div class="h">🎯 Piano legato al peso obiettivo</div>
     <div class="ring-wrap">
-      <div class="ring">${ring(wp.progress,'var(--green)',96,11)}<div class="c-val"><b style="font-size:20px">${(wp.progress*100).toFixed(0)}%</b><small>percorso</small></div></div>
+      <div class="ring" style="width:96px;height:96px;flex:0 0 96px">${ring(wp.progress,'var(--green)',96,11)}<div class="c-val"><b style="font-size:20px">${(wp.progress*100).toFixed(0)}%</b><small>percorso</small></div></div>
       <div style="flex:1">
         <div class="row" style="padding:7px 0"><div class="rt"><b>${S.wNow} kg</b><small>peso attuale</small></div><div class="rv" style="color:var(--green-d)">${wp.toLose>0?'-'+wp.toLose:(wp.toLose<0?'+'+Math.abs(wp.toLose):'✓')} kg</div></div>
         <div class="row" style="padding:7px 0"><div class="rt"><b>${wp.kcal} kcal/dì</b><small>${wp.dailyDelta>0?'deficit '+wp.dailyDelta:'surplus '+Math.abs(wp.dailyDelta)} kcal</small></div><div class="rv" style="font-size:12px;color:var(--muted)">TDEE ${wp.maintenance}</div></div>
@@ -1469,13 +1606,84 @@ function prenotaHTML(){
 }
 function renderMyAppts(){
   const c=document.getElementById('my-appts'); if(!c)return;
-  c.innerHTML=S.appointments.map(a=>`
-    <div class="row">
+  c.innerHTML=S.appointments.map((a,i)=>`
+    <div class="row" style="flex-wrap:wrap">
       <div class="ri" style="background:var(--mint)">${a.ic}</div>
-      <div class="rt"><b>${a.who}</b><small>${a.spec} · ${a.when}</small></div>
+      <div class="rt" style="flex:1"><b>${a.who}</b><small>${a.spec} · ${a.when}</small></div>
       <div class="rv"><span class="chip grey" style="padding:5px 9px;font-size:10px">${a.mode}</span></div>
+      <div style="display:flex;gap:6px;width:100%;margin-top:8px">
+        <button class="btn sm sec" style="flex:1;padding:8px" onclick="modifyAppt(${i})">✏️ Modifica</button>
+        <button class="btn sm" style="flex:1;padding:8px;background:var(--coral);box-shadow:none" onclick="cancelAppt(${i})">✕ Annulla</button>
+      </div>
     </div>`).join('') || '<div class="sub">Nessun appuntamento in programma.</div>';
 }
+/* ===== DISPONIBILITÀ & CALENDARIO PRENOTAZIONI ===== */
+const ITMONTH=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+const ITDOW=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dateLabel(d){ return ITDOW[d.getDay()]+' '+d.getDate()+' '+ITMONTH[d.getMonth()]; }
+// disponibilità di default per i medici demo (deterministica dal nome)
+function defaultAvail(name){
+  let seed=0; for(let i=0;i<name.length;i++)seed=(seed*31+name.charCodeAt(i))%9973;
+  const slots=[]; const base=new Date(); base.setHours(0,0,0,0);
+  for(let dd=1;dd<=10;dd++){ const d=new Date(base); d.setDate(base.getDate()+dd);
+    if(d.getDay()===0)continue; // niente domenica
+    if((seed+dd)%3===0)continue; // non tutti i giorni
+    const times=[]; const pool=['09:00','10:30','12:00','15:00','16:30','18:00'];
+    pool.forEach((t,ti)=>{ if((seed+dd*7+ti)%2===0)times.push(t); });
+    if(times.length)slots.push({date:dateKey(d),label:dateLabel(d),times});
+  }
+  return slots;
+}
+function docAvail(name){
+  if(S.pro&&S.pro.name===name){ return (S.pro.avail&&S.pro.avail.length)?S.pro.avail:[]; }
+  return defaultAvail(name);
+}
+function slotTaken(name,date,time){ return (S.booked||[]).includes(name+'|'+date+'|'+time); }
+function openBooking(name,spec,ic){
+  S._bk={name,spec,ic,date:null}; drawBooking();
+}
+function drawBooking(){
+  const bk=S._bk; if(!bk)return;
+  let avail=docAvail(bk.name).map(d=>({...d,times:d.times.filter(t=>!slotTaken(bk.name,d.date,t))})).filter(d=>d.times.length);
+  const box=document.createElement('div'); box.id='book-panel'; box.style.cssText='position:absolute;inset:0;z-index:60;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
+  let body;
+  if(!avail.length){ body=`<div style="text-align:center;padding:24px 8px"><div style="font-size:40px">📅</div><div class="sub">Nessuna disponibilità al momento. Riprova più tardi.</div></div>`; }
+  else if(!bk.date){
+    body=`<div class="sub" style="margin-bottom:10px">Scegli un <b>giorno</b> disponibile:</div>
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto">
+    ${avail.map(d=>`<button class="btn sec sm" style="text-align:left;padding:12px" onclick="pickBookDate('${d.date}')">📅 ${d.label} <span class="sub" style="float:right">${d.times.length} orari</span></button>`).join('')}</div>`;
+  } else {
+    const day=avail.find(d=>d.date===bk.date)||avail[0];
+    body=`<button class="btn ghost sm" style="margin-bottom:8px" onclick="S._bk.date=null;drawBooking()">← altri giorni</button>
+    <div class="sub" style="margin-bottom:10px">📅 <b>${day.label}</b> — scegli l'orario:</div>
+    <div class="grid2" style="gap:8px">${day.times.map(t=>`<button class="btn sec sm" style="padding:12px" onclick="confirmBooking('${day.date}','${day.label.replace(/'/g,'')}','${t}')">🕐 ${t}</button>`).join('')}</div>`;
+  }
+  box.innerHTML=`<div style="background:#fff;width:100%;border-radius:22px 22px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:82%;overflow-y:auto">
+    <div class="grab"></div>
+    <h3 style="margin:0 0 4px;text-align:center;font-size:16px">${bk.ic} Prenota con ${bk.name}</h3>
+    <div class="sub" style="text-align:center;margin-bottom:14px">${bk.spec}</div>
+    ${body}
+    <button class="btn" style="margin-top:12px" onclick="closeBooking()">Chiudi</button>
+  </div>`;
+  box.onclick=(ev)=>{ if(ev.target===box)closeBooking(); };
+  const old=document.getElementById('book-panel'); if(old)old.remove();
+  (document.querySelector('.screen.active')||document.body).appendChild(box);
+}
+function pickBookDate(date){ S._bk.date=date; drawBooking(); }
+function closeBooking(){ const b=document.getElementById('book-panel'); if(b)b.remove(); S._bk=null; }
+function confirmBooking(date,label,time){
+  const bk=S._bk; if(!bk)return;
+  S.booked=S.booked||[]; S.booked.push(bk.name+'|'+date+'|'+time);
+  S.appointments.unshift({who:bk.name,spec:bk.spec,ic:bk.ic,date,label,time,when:label+' · '+time,mode:'Confermato',slot:bk.name+'|'+date+'|'+time});
+  S.reminders.unshift({t:'Appuntamento '+bk.spec,d:bk.name+' · '+label+' '+time+' · promemoria 1h prima',on:true,ic:bk.ic,c:'var(--coral)'});
+  closeBooking(); save(); renderMyAppts(); renderHomeAppts(); rebuild('home'); rebuild('promemoria');
+  toast('Prenotato: '+bk.name+' · '+label+' '+time);
+}
+function freeSlot(a){ if(a&&a.slot){ S.booked=(S.booked||[]).filter(x=>x!==a.slot); } }
+function cancelAppt(i){ const a=S.appointments[i]; if(!a)return; if(!confirm('Annullare l\'appuntamento con '+a.who+'?'))return;
+  freeSlot(a); S.appointments.splice(i,1); save(); renderMyAppts(); renderHomeAppts(); rebuild('home'); toast('Appuntamento annullato'); }
+function modifyAppt(i){ const a=S.appointments[i]; if(!a)return; freeSlot(a); const who=a.who,spec=a.spec,ic=a.ic; S.appointments.splice(i,1); save(); renderMyAppts(); renderHomeAppts(); openBooking(who,spec,ic); toast('Scegli un nuovo orario'); }
 function allDocs(){
   let list=DOCTORS.slice();
   if(S.pro && S.pro.status==='verificato'){
@@ -1501,7 +1709,7 @@ function renderDocs(filter){
         <div class="sub" style="font-size:10.5px;margin-top:3px">${d.v?'🎓 '+d.ente:'⏳ in verifica'} · ${d.when} · ${d.p}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
-        ${d.me?`<button class="btn sm sec" style="width:auto;padding:9px 12px" onclick="go('pro')">Gestisci</button>`:`<button class="btn sm" style="width:auto;padding:9px 12px" onclick="book('${d.n}','${d.s}','${d.ic}','${d.when}')">Prenota</button>
+        ${d.me?`<button class="btn sm sec" style="width:auto;padding:9px 12px" onclick="go('pro')">Gestisci</button>`:`<button class="btn sm" style="width:auto;padding:9px 12px" onclick="openBooking('${d.n.replace(/'/g,'')}','${d.s.replace(/'/g,'')}','${d.ic}')">Prenota</button>
         <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="rateDoctor('${d.n.replace(/'/g,'')}')">⭐ Valuta</button>`}
       </div>
     </div>`).join('');
@@ -1515,12 +1723,7 @@ function rateDoctor(name){
   toast('Grazie! Recensione pubblicata ⭐'+st);
 }
 function filterDocs(s,btn){document.querySelectorAll('#spec-filter .chip').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');renderDocs(s);}
-function book(n,s,ic,when){
-  S.appointments.unshift({who:n,spec:s,when:when.replace('Prima disp. ','').replace('Oggi ','Oggi · ').replace('Domani ','Domani · ')+ (when.includes(':')?'':' · 10:00'),ic:ic,mode:"Da confermare"});
-  S.reminders.unshift({t:"Appuntamento "+s,d:n+" · promemoria 1h prima",on:true,ic:ic,c:"var(--coral)"});
-  renderMyAppts();renderHomeAppts();rebuild('home');rebuild('promemoria');
-  toast('Prenotato con '+n+' · promemoria impostato');
-}
+function book(n,s,ic,when){ openBooking(n,s,ic); }
 
 /* ---------- SHOP INTEGRATORI ---------- */
 const PRODUCTS=[
@@ -1696,16 +1899,21 @@ function allenamentoHTML(){
   ${canSell()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo allenamento (video)</button>`:''}
 
   ${custom.length?`<div class="section-title" style="margin-top:0">Allenamenti dei creator 🎬</div>
-  ${custom.map((w,i)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><button class="btn sm" style="width:auto;padding:10px 14px;align-self:center" onclick="playVideo('${w.video}')">▶</button></div>`).join('')}`:''}
+  ${custom.map((w,i)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,'')}')">✓ Fatto</button></div></div>`).join('')}`:''}
 
-  <div class="section-title" ${custom.length?'':'style="margin-top:0"'}>Libreria per il tuo obiettivo</div>
+  <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0">🔥</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div></div>
+
+  <div class="section-title" style="margin-top:0">Libreria per il tuo obiettivo</div>
   ${prog.list.map(w=>`
     <div class="pro">
       <div class="ph" style="background:${w.bg}">${w.ic}</div>
-      <div class="pi"><b>${w.n}</b><small>${w.d} · ~${w.k} kcal</small></div>
-      <button class="btn sm" style="width:auto;padding:10px 14px;align-self:center" onclick="toast('Avvio: ${w.n} ▶')">▶</button>
+      <div class="pi"><b>${w.n}</b><small>${w.d} · ~${Math.round(w.k*(S.wNow||65)/65)} kcal per te</small></div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
+        <button class="btn sm" style="width:auto;padding:8px 12px" onclick="toast('Avvio: ${w.n} ▶')">▶ Avvia</button>
+        <button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="logWorkoutDone('${w.n}',${w.k})">✓ Fatto</button>
+      </div>
     </div>`).join('')}
-  <div class="tiny">Cambiando obiettivo nel Profilo, cambiano sia i pasti sia gli allenamenti.</div>
+  <div class="tiny">Tocca "✓ Fatto" dopo un allenamento: calcolo le calorie bruciate sul tuo peso. Cambiando obiettivo nel Profilo cambiano sia i pasti sia gli allenamenti.</div>
   `;
 }
 function addWorkout(){
@@ -2169,7 +2377,7 @@ function renderComBody(t){
     if(cloudOn()&&loggedIn()){
       b.innerHTML=head+'<div class="card" style="text-align:center"><div class="sub">Caricamento bozze…</div></div>';
       cloudLoadDrafts().then(rows=>{
-        CLOUD_DRAFTS=rows.map(r=>({id:r.id,cloudId:r.id,src:r.video_url,videoUrl:r.video_url,caption:r.caption,type:r.type,overlays:r.overlays||[],music:r.music,voiceover:r.voiceover,muteOriginal:r.mute,cloud:true}));
+        CLOUD_DRAFTS=rows.map(r=>({id:r.id,cloudId:r.id,src:r.video_url,videoUrl:r.video_url,caption:r.caption,type:r.type,overlays:r.overlays||[],music:r.music,voiceover:r.voiceover,muteOriginal:r.mute,isImage:r.is_image,flip:r.flip,cloud:true}));
         b.innerHTML=head+(CLOUD_DRAFTS.length?CLOUD_DRAFTS.map(draftCard).join(''):'<div class="card" style="text-align:center"><div style="font-size:40px">📝</div><div class="sub">Nessuna bozza nel cloud.</div></div>');
       });
       return;
@@ -2225,11 +2433,12 @@ function shortCard(s){
   </div>`;
 }
 function realShortCard(p){
+  if(p.isImage==null)p.isImage=p.is_image;
   const ovs=Array.isArray(p.overlays)?p.overlays:[];
   const musicName=p.music?(p.music.name||p.music.preset):'';
-  return `<div class="short" data-pid="${p.id}">
-    <video src="${p.video_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" playsinline loop ${p.mute?'muted':''} controls preload="metadata"></video>
-    ${ovs.map(o=>`<div style="${ovStyle(o)}">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+  return `<div class="short" data-pid="${p.id}"${p.music&&p.music.preset?` data-preset="${p.music.preset}"`:''}>
+    ${mediaBase(p.video_url,p.isImage,p.flip,p.mute)}
+    ${ovs.map(o=>ovNode(o)).join('')}
     ${p.music&&p.music.src?`<audio src="${p.music.src}" loop></audio>`:''}
     ${p.voiceover?`<audio src="${p.voiceover}" loop></audio>`:''}
     <div class="grad"></div>
@@ -2252,26 +2461,31 @@ function likeRealPost(id,cur,btn){ cloudLikePost(id,cur); btn.innerHTML='<span>�
 let DRAFTS=[], MYSHORTS=[];
 let _editState=null,_editFile=null,_editSrc=null,_voiceRec=null,_voiceChunks=[],_bgAudio=null,_bgCtx=null;
 function composeVideo(){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*,image/*';
   inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(!f)return; const url=URL.createObjectURL(f); openEditor(url,f); };
   inp.click();
 }
 function openEditor(src,file,draft){
   _editSrc=draft?draft.src:src; _editFile=file||null;
-  _editState=draft?JSON.parse(JSON.stringify(draft)):{id:Date.now(),caption:'',type:'What I eat',overlays:[],music:null,voiceover:null,muteOriginal:false,src:_editSrc};
+  const isImg = draft? !!draft.isImage : (file && /^image\//.test(file.type||''));
+  _editState=draft?JSON.parse(JSON.stringify(draft)):{id:Date.now(),caption:'',type:'What I eat',overlays:[],music:null,voiceover:null,muteOriginal:false,flip:false,isImage:isImg,src:_editSrc};
   document.getElementById('editor').classList.add('open'); renderEditor();
 }
-function closeEditor(){ stopBg(); if(_voiceRec&&_voiceRec.state==='recording'){try{_voiceRec.stop();}catch(e){}} const e=document.getElementById('editor'); e.classList.remove('open'); e.innerHTML=''; }
+function closeEditor(){ stopPreview(); stopBg(); if(_voiceRec&&_voiceRec.state==='recording'){try{_voiceRec.stop();}catch(e){}} const e=document.getElementById('editor'); e.classList.remove('open'); e.innerHTML=''; }
 let _selOv=-1, _ovDrag=null;
 function renderEditor(){
   const st=_editState; const e=document.getElementById('editor');
   const ovX=o=>o.x!=null?o.x:50, ovY=o=>o.y!=null?o.y:(o.top?parseFloat(o.top):45);
+  const flip=st.flip?'transform:scaleX(-1)':'';
+  const base = st.isImage
+    ? `<img class="ed-base" src="${_editSrc}" style="${flip}">`
+    : `<video id="ed-video" src="${_editSrc}" playsinline loop controls ${st.muteOriginal?'muted':''} style="${flip}"></video>`;
   e.innerHTML=`
    <div class="ed-stage" id="ed-stage" onpointermove="ovMove(event)" onpointerup="ovUp(event)" onpointerleave="ovUp(event)">
-     <video id="ed-video" src="${_editSrc}" playsinline autoplay loop ${st.muteOriginal?'muted':''}></video>
-     ${st.overlays.map((o,i)=>`<div class="ed-ov" data-oi="${i}" style="left:${ovX(o)}%;top:${ovY(o)}%;transform:translate(-50%,-50%);color:${o.color||'#fff'};font-size:${o.size||26}px;${i===_selOv?'outline:1.5px dashed rgba(255,255,255,.75);border-radius:8px;':''}" onpointerdown="ovDown(event,${i})">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+     ${base}
+     ${st.overlays.map((o,i)=>`<div class="ed-ov" data-oi="${i}" style="left:${ovX(o)}%;top:${ovY(o)}%;transform:translate(-50%,-50%);${o.img?'':'color:'+(o.color||'#fff')+';font-size:'+(o.size||26)+'px;'}${i===_selOv?'outline:1.5px dashed rgba(255,255,255,.85);border-radius:8px;':''}" onpointerdown="ovDown(event,${i})">${o.img?`<img src="${o.img}" style="width:${o.size||120}px;max-width:60vw">`:(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
      ${st.music&&st.music.src?`<audio id="ed-music" src="${st.music.src}" loop></audio>`:''}
-     ${st.voiceover?`<audio id="ed-voice" src="${st.voiceover}" loop></audio>`:''}
+     ${st.voiceover?`<audio id="ed-voice" src="${st.voiceover}"></audio>`:''}
    </div>
    <div class="ed-top">
      <button onclick="closeEditor()" style="background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:12px;padding:9px 13px;font-weight:800">✕</button>
@@ -2279,24 +2493,43 @@ function renderEditor(){
    </div>
    <div class="ed-tools">
      <button onclick="addOverlay()"><span>🅰️</span><small>Testo</small></button>
+     <button onclick="addPhoto()"><span>🖼️</span><small>Foto</small></button>
      <button onclick="openMusicPanel()"><span>🎵</span><small>Musica</small></button>
      <button onclick="toggleVoice()"><span>🎙️</span><small id="voice-lbl">Doppia</small></button>
-     <button onclick="toggleMute()"><span>${st.muteOriginal?'🔇':'🔊'}</span><small>Audio</small></button>
+     <button onclick="toggleMirror()"><span>🔄</span><small>Specchia</small></button>
+     ${st.isImage?'':`<button onclick="toggleMute()"><span>${st.muteOriginal?'🔇':'🔊'}</span><small>Audio</small></button>`}
    </div>
-   <div id="ed-ovbar" style="position:absolute;bottom:148px;left:0;right:0;display:${_selOv>=0?'flex':'none'};gap:7px;align-items:center;justify-content:center;flex-wrap:wrap;padding:0 10px;z-index:5">
+   <div id="ed-ovbar" style="position:absolute;bottom:158px;left:0;right:0;display:${_selOv>=0?'flex':'none'};gap:7px;align-items:center;justify-content:center;flex-wrap:wrap;padding:0 10px;z-index:5">
      ${['#ffffff','#000000','#ffd166','#ff6f8b','#1fae7e','#3b9dff'].map(c=>`<button onclick="ovColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid #fff;cursor:pointer"></button>`).join('')}
-     <button onclick="ovSize(-3)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A−</button>
-     <button onclick="ovSize(3)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A＋</button>
+     <button onclick="ovSize(-4)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A−</button>
+     <button onclick="ovSize(4)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A＋</button>
      <button onclick="ovEditText()" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">✏️</button>
      <button onclick="ovDelete()" style="background:rgba(255,111,139,.9);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">🗑</button>
    </div>
    <div class="ed-bottom">
-     <div class="sub" style="color:#9aa">${st.music?('🎵 '+(st.music.name||st.music.preset||'traccia')):'Nessuna musica'}${st.voiceover?' · 🎙️ doppiaggio':''}${st.overlays.length?' · ✍️ '+st.overlays.length+' scritte (trascina per spostare)':''}</div>
+     <div class="sub" style="color:#9aa">${st.music?('🎵 '+(st.music.name||st.music.preset||'traccia')):'Nessuna musica'}${st.voiceover?' · 🎙️ doppiaggio':''} · trascina testo/foto per spostarli</div>
+     <div style="display:flex;gap:8px"><button class="btn sec" style="flex:0 0 auto;width:auto;padding:12px 16px" onclick="previewMedia()">${_previewOn?'⏸️':'🔊 Anteprima'}</button><button class="btn" style="flex:1" onclick="publishEdited()">Pubblica</button></div>
      <input id="ed-cap" placeholder="Aggiungi una descrizione..." value="${(st.caption||'').replace(/"/g,'&quot;')}">
-     <button class="btn" onclick="publishEdited()">Pubblica</button>
    </div>`;
-  wireEditorMedia(); startBg();
+  wireEditorMedia();
 }
+let _previewOn=false, _previewCtx=null, _previewAudios=[];
+function previewMedia(){
+  const v=document.getElementById('ed-video');
+  if(_previewOn){ _previewOn=false; if(v){try{v.pause();}catch(e){}} else stopPreview(); }
+  else { _previewOn=true; if(v){ v.muted=!!_editState.muteOriginal; try{v.currentTime=0;}catch(e){} v.play().catch(()=>{}); } else { startAllAudio(); } }
+  const btn=document.querySelector('.ed-bottom .btn.sec'); if(btn)btn.textContent=_previewOn?'⏸️ Ferma':'🔊 Anteprima';
+}
+function startAllAudio(){
+  stopPreview();
+  const mus=document.getElementById('ed-music'), voi=document.getElementById('ed-voice');
+  if(mus){ mus.currentTime=0; mus.volume=0.7; mus.loop=true; mus.play().catch(()=>{}); _previewAudios.push(mus); }
+  if(voi){ voi.currentTime=0; voi.volume=1; voi.play().catch(()=>{}); _previewAudios.push(voi); }
+  if(_editState.music&&_editState.music.preset){ _previewCtx=playPreset(_editState.music.preset,'preview'); }
+}
+function stopPreview(){ _previewAudios.forEach(a=>{try{a.pause();}catch(e){}}); _previewAudios=[]; if(_previewCtx){try{clearTimeout(_previewCtx._t);_previewCtx.close();}catch(e){}_previewCtx=null;} }
+function toggleMirror(){ _editState.flip=!_editState.flip; renderEditor(); toast(_editState.flip?'Video specchiato':'Specchio disattivato'); }
+function addPhoto(){ fileFallback((url)=>{ _editState.overlays.push({img:url,x:50,y:45,size:140}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la foto dove vuoi · A−/A＋ per la dimensione'); },'image/*'); }
 function addOverlay(){ const t=prompt('Testo da scrivere sul video:'); if(!t||!t.trim())return; _editState.overlays.push({text:t.trim(),x:50,y:40,color:'#fff',size:28}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la scritta dove vuoi · usa la barra per colore e dimensione'); }
 function ovDown(ev,i){ ev.preventDefault(); ev.stopPropagation(); _selOv=i; _ovDrag={i,moved:false,px:ev.clientX,py:ev.clientY}; try{ev.currentTarget.setPointerCapture(ev.pointerId);}catch(e){}
   document.querySelectorAll('.ed-ov').forEach(el=>el.style.outline=''); const cur=document.querySelector('[data-oi="'+i+'"]'); if(cur)cur.style.outline='1.5px dashed rgba(255,255,255,.75)';
@@ -2307,24 +2540,22 @@ function ovMove(ev){ if(!_ovDrag)return; const st=document.getElementById('ed-st
   if(Math.abs(ev.clientX-_ovDrag.px)>4||Math.abs(ev.clientY-_ovDrag.py)>4)_ovDrag.moved=true; }
 function ovUp(ev){ if(_ovDrag){_ovDrag=null;} }
 function selOvEl(){ return document.querySelector('[data-oi="'+_selOv+'"]'); }
-function ovColor(c){ const o=_editState.overlays[_selOv]; if(!o)return; o.color=c; const el=selOvEl(); if(el)el.style.color=c; }
-function ovSize(d){ const o=_editState.overlays[_selOv]; if(!o)return; o.size=Math.max(14,Math.min(60,(o.size||26)+d)); const el=selOvEl(); if(el)el.style.fontSize=o.size+'px'; }
-function ovEditText(){ const o=_editState.overlays[_selOv]; if(!o)return; const t=prompt('Modifica testo:',o.text); if(t===null)return; if(!t.trim()){ovDelete();return;} o.text=t.trim(); const el=selOvEl(); if(el)el.textContent=o.text; }
+function ovColor(c){ const o=_editState.overlays[_selOv]; if(!o||o.img)return; o.color=c; const el=selOvEl(); if(el)el.style.color=c; }
+function ovSize(d){ const o=_editState.overlays[_selOv]; if(!o)return; if(o.img){ o.size=Math.max(50,Math.min(300,(o.size||140)+d*8)); const im=selOvEl()&&selOvEl().querySelector('img'); if(im)im.style.width=o.size+'px'; } else { o.size=Math.max(14,Math.min(64,(o.size||26)+d)); const el=selOvEl(); if(el)el.style.fontSize=o.size+'px'; } }
+function ovEditText(){ const o=_editState.overlays[_selOv]; if(!o||o.img){toast('Foto: usa A−/A＋ per ridimensionare o 🗑 per eliminare');return;} const t=prompt('Modifica testo:',o.text); if(t===null)return; if(!t.trim()){ovDelete();return;} o.text=t.trim(); const el=selOvEl(); if(el)el.textContent=o.text; }
 function ovDelete(){ if(_selOv<0)return; _editState.overlays.splice(_selOv,1); _selOv=-1; renderEditor(); }
 function toggleMute(){ _editState.muteOriginal=!_editState.muteOriginal; renderEditor(); }
-function wireEditorMedia(){ const v=document.getElementById('ed-video'); if(!v)return; const auds=[document.getElementById('ed-music'),document.getElementById('ed-voice')].filter(Boolean);
-  v.onplay=()=>auds.forEach(a=>{try{a.currentTime=0;a.play().catch(()=>{});}catch(e){}});
-  v.onpause=()=>auds.forEach(a=>{try{a.pause();}catch(e){}});
-  setTimeout(()=>{ try{ if(v&&!v.paused) auds.forEach(a=>a.play().catch(()=>{})); }catch(e){} },250); }
+function wireEditorMedia(){ const v=document.getElementById('ed-video'); if(!v)return;
+  v.onplay=()=>{ _previewOn=true; startAllAudio(); const btn=document.querySelector('.ed-bottom .btn.sec'); if(btn)btn.textContent='⏸️ Ferma'; };
+  v.onpause=()=>{ _previewOn=false; stopPreview(); const btn=document.querySelector('.ed-bottom .btn.sec'); if(btn)btn.textContent='🔊 Anteprima'; }; }
 /* pannello musica (collegabile ad app) */
 function openMusicPanel(){
   const box=document.createElement('div'); box.id='music-panel'; box.style.cssText='position:absolute;inset:0;z-index:7;background:rgba(0,0,0,.55);display:flex;align-items:flex-end';
-  box.innerHTML=`<div style="background:#141414;color:#fff;width:100%;border-radius:22px 22px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0))">
+  box.innerHTML=`<div style="background:#141414;color:#fff;width:100%;border-radius:22px 22px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:80%;overflow-y:auto">
     <div class="grab" style="background:#444"></div>
     <h3 style="margin:0 0 12px;text-align:center;font-size:16px">🎵 Aggiungi musica</h3>
-    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Chill')">🎧 Base Chill</button>
-    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Upbeat')">⚡ Base Upbeat</button>
-    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Lo-fi')">🌙 Base Lo-fi</button>
+    <div class="sub" style="color:#9aa;margin-bottom:6px">Basi (tocca per ascoltare e scegliere):</div>
+    <div class="grid2" style="margin-bottom:10px">${Object.keys(PRESETS).map(n=>`<button class="btn sm sec" style="padding:9px" onclick="setMusicPreset('${n}')">🎧 ${n}</button>`).join('')}</div>
     <button class="btn sm sec" style="margin-bottom:8px" onclick="uploadMusic()">📁 Carica un audio dal telefono</button>
     <button class="btn sm sec" style="margin-bottom:8px" onclick="linkMusic()">🔗 Da app musicale (Spotify, Apple Music, YouTube)</button>
     <button class="btn sm sec" style="margin-bottom:8px" onclick="_editState.music=null;closeMusicPanel();renderEditor()">🚫 Nessuna musica</button>
@@ -2348,18 +2579,31 @@ async function toggleVoice(){
     _voiceRec.start(); const l=document.getElementById('voice-lbl'); if(l)l.textContent='Stop'; toast('Registrazione doppiaggio… ritocca 🎙️ per fermare');
   }catch(e){ toast('Permesso microfono negato'); }
 }
+const PRESETS={
+ 'Chill':{seq:[261,329,392,329],ms:480},
+ 'Upbeat':{seq:[392,494,587,494,392],ms:300},
+ 'Lo-fi':{seq:[220,262,196,262],ms:520},
+ 'Deep House':{seq:[147,196,220,196],ms:400},
+ 'Happy Pop':{seq:[523,587,659,784,659],ms:300},
+ 'Trap':{seq:[110,110,147,110,131],ms:260},
+ 'Dreamy':{seq:[330,392,494,392],ms:600},
+ 'Energy':{seq:[440,554,659,554],ms:280},
+ 'Acustica':{seq:[294,370,440,370],ms:500},
+ 'Epic':{seq:[196,294,392,294],ms:440}
+};
 function startBg(){ stopBg(); const m=_editState&&_editState.music; if(!m)return;
-  if(m.src){ try{_bgAudio=new Audio(m.src);_bgAudio.loop=true;_bgAudio.volume=0.6;_bgAudio.play().catch(()=>{});}catch(e){} return; }
-  if(m.preset) playPreset(m.preset);
+  if(m.src){ try{_bgAudio=new Audio(m.src);_bgAudio.loop=true;_bgAudio.volume=0.7;_bgAudio.play().catch(()=>{});}catch(e){} return; }
+  if(m.preset) playPreset(m.preset,'edit');
 }
 function stopBg(){ if(_bgAudio){try{_bgAudio.pause();}catch(e){}_bgAudio=null;} if(_bgCtx){try{clearTimeout(_bgCtx._t);_bgCtx.close();}catch(e){}_bgCtx=null;} }
-function playPreset(name){ try{ const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return; _bgCtx=new AC();
-  const seq={'Chill':[261,329,392,329],'Upbeat':[392,494,587,494],'Lo-fi':[220,262,196,262]}[name]||[261,329,392]; let i=0;
-  const g0=_bgCtx.createGain(); g0.gain.value=0.05; g0.connect(_bgCtx.destination);
-  function tick(){ if(!_bgCtx)return; const o=_bgCtx.createOscillator(); o.type='sine'; o.frequency.value=seq[i%seq.length];
-    const g=_bgCtx.createGain(); g.gain.setValueAtTime(0.0001,_bgCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.6,_bgCtx.currentTime+0.05); g.gain.exponentialRampToValueAtTime(0.0001,_bgCtx.currentTime+0.45);
-    o.connect(g); g.connect(g0); o.start(); o.stop(_bgCtx.currentTime+0.5); i++; _bgCtx._t=setTimeout(tick,480); } tick();
-}catch(e){} }
+function playPreset(name,tag){ try{ const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return null; const ctx=new AC();
+  const P=PRESETS[name]||PRESETS['Chill']; const seq=P.seq; let i=0;
+  const g0=ctx.createGain(); g0.gain.value=0.22; g0.connect(ctx.destination);
+  function tick(){ if(!ctx||ctx.state==='closed')return; const o=ctx.createOscillator(); o.type='triangle'; o.frequency.value=seq[i%seq.length];
+    const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.7,ctx.currentTime+0.04); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+P.ms/1000*0.9);
+    o.connect(g); g.connect(g0); o.start(); o.stop(ctx.currentTime+P.ms/1000); i++; ctx._t=setTimeout(tick,P.ms); } tick();
+  if(tag==='edit') _bgCtx=ctx; return ctx;
+}catch(e){ return null; } }
 async function saveDraft(){
   _editState.caption=(document.getElementById('ed-cap')||{}).value||_editState.caption; _editState.src=_editSrc;
   if(cloudOn()&&loggedIn()){
@@ -2378,15 +2622,19 @@ async function publishEdited(){
     try{ await cloudPublishEdit(_editState,_editFile); if(_editState.cloudId){ /* draft già rimossa */ } closeEditor(); go('community'); comTab('perte'); toast('Short pubblicato online! 🎬'); return; }
     catch(e){ toast('Errore cloud: '+(e.message||e)); }
   }
-  MYSHORTS.unshift({id:'my'+_editState.id,user:(S.user.name||'io'),me:true,src:_editSrc,caption:cap,type:_editState.type,overlays:_editState.overlays,music:_editState.music,voiceover:_editState.voiceover,muteOriginal:_editState.muteOriginal,diet:S.diet,goal:S.user.goal,likes:0,liked:false});
+  MYSHORTS.unshift({id:'my'+_editState.id,user:(S.user.name||'io'),me:true,src:_editSrc,caption:cap,type:_editState.type,overlays:_editState.overlays,music:_editState.music,voiceover:_editState.voiceover,muteOriginal:_editState.muteOriginal,isImage:_editState.isImage,flip:_editState.flip,diet:S.diet,goal:S.user.goal,likes:0,liked:false});
   DRAFTS=DRAFTS.filter(d=>d.id!==_editState.id);
   closeEditor(); go('community'); comTab('perte'); toast('Short pubblicato! 🎬');
 }
 function ovStyle(o){ const x=o.x!=null?o.x:50, y=o.y!=null?o.y:(o.top?parseFloat(o.top):45); return `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);color:${o.color||'#fff'};font-weight:800;font-size:${o.size||26}px;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;max-width:88%`; }
+function ovNode(o){ const x=o.x!=null?o.x:50, y=o.y!=null?o.y:(o.top?parseFloat(o.top):45);
+  if(o.img){ return `<div style="position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%)"><img src="${o.img}" style="width:${o.size||140}px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.4)"></div>`; }
+  return `<div style="${ovStyle(o)}">${(o.text||'').replace(/</g,'&lt;')}</div>`; }
+function mediaBase(src,isImage,flip,muted){ const f=flip?'transform:scaleX(-1);':''; if(isImage){ return `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;${f}">`; } return `<video src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;${f}" playsinline loop ${muted?'muted':''} controls preload="metadata"></video>`; }
 function myShortCard(s){
-  return `<div class="short" data-my="${s.id}">
-    <video src="${s.src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" playsinline loop ${s.muteOriginal?'muted':''} controls preload="metadata"></video>
-    ${(s.overlays||[]).map(o=>`<div style="${ovStyle(o)}">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+  return `<div class="short" data-my="${s.id}"${s.music&&s.music.preset?` data-preset="${s.music.preset}"`:''}>
+    ${mediaBase(s.src,s.isImage,s.flip,s.muteOriginal)}
+    ${(s.overlays||[]).map(o=>ovNode(o)).join('')}
     ${s.music&&s.music.src?`<audio src="${s.music.src}" loop></audio>`:''}
     ${s.voiceover?`<audio src="${s.voiceover}" loop></audio>`:''}
     <div class="grad"></div>
@@ -2402,10 +2650,16 @@ function myShortCard(s){
 function deleteMyShort(id){ if(!confirm('Eliminare questo video?'))return; MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); }
 async function cloudDeletePost(id){ if(!cloudOn())return; try{ await SB.from('posts').delete().eq('id',id); }catch(e){} }
 async function deletePost(id){ if(!confirm('Eliminare questo video?'))return; await cloudDeletePost(id); renderComBody('perte'); toast('Video eliminato'); }
-function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; if(!v||!auds.length)return;
-  v.addEventListener('play',()=>auds.forEach(a=>{try{a.currentTime=v.currentTime||0;a.play().catch(()=>{});}catch(e){}}));
-  v.addEventListener('pause',()=>auds.forEach(a=>{try{a.pause();}catch(e){}}));
-  v.addEventListener('seeked',()=>auds.forEach(a=>{try{a.currentTime=v.currentTime;}catch(e){}})); }); }
+function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; const preset=card.getAttribute('data-preset');
+  if(v){
+    v.addEventListener('play',()=>{ auds.forEach(a=>{try{a.currentTime=v.currentTime||0;a.play().catch(()=>{});}catch(e){}}); if(preset){ try{card._pctx&&card._pctx.close&&card._pctx.close();}catch(e){} card._pctx=playPreset(preset,'preview'); } });
+    v.addEventListener('pause',()=>{ auds.forEach(a=>{try{a.pause();}catch(e){}}); if(card._pctx){try{card._pctx.close();}catch(e){} card._pctx=null;} });
+    v.addEventListener('seeked',()=>auds.forEach(a=>{try{a.currentTime=v.currentTime;}catch(e){}}));
+  } else if(preset||auds.length){
+    // immagine statica: attiva musica/audio quando tocchi la card
+    card.style.cursor='pointer';
+    card.addEventListener('click',()=>{ if(card._playing){ auds.forEach(a=>{try{a.pause();}catch(e){}}); if(card._pctx){try{card._pctx.close();}catch(e){}card._pctx=null;} card._playing=false; toast('⏸ Audio in pausa'); } else { auds.forEach(a=>{try{a.currentTime=0;a.play().catch(()=>{});}catch(e){}}); if(preset)card._pctx=playPreset(preset,'preview'); card._playing=true; toast('🔊 Riproduzione'); } });
+  } }); }
 function draftCard(d){
   return `<div class="card">
     <div style="display:flex;gap:12px">
@@ -2746,7 +3000,7 @@ function fastStatus(){
   const prog=total?elapsed/total:0;
   el.innerHTML=`<div class="h">${eating?'🍽️ Finestra aperta':'⏳ Sei in digiuno'}</div>
     <div class="ring-wrap">
-      <div class="ring">${ring(prog,eating?'var(--green)':'var(--violet)',96,11)}<div class="c-val"><b style="font-size:17px">${hh}h${String(mm).padStart(2,'0')}</b><small>${eating?'alla chiusura':'al pasto'}</small></div></div>
+      <div class="ring" style="width:96px;height:96px;flex:0 0 96px">${ring(prog,eating?'var(--green)':'var(--violet)',96,11)}<div class="c-val"><b style="font-size:17px">${hh}h${String(mm).padStart(2,'0')}</b><small>${eating?'alla chiusura':'al pasto'}</small></div></div>
       <div style="flex:1"><div class="sub">Finestra <b>${f.start}–${f.end}</b> · ${f.proto}</div><div class="sub" style="margin-top:6px">${eating?'Approfitta per pasti completi e proteici.':'Bevi acqua, tisane o caffè amaro: manca poco! 💪'}</div>
       <button class="btn sm sec" style="margin-top:10px" onclick="S.fasting=null;save();rebuild(\'digiuno\');go(\'digiuno\');toast(\'Digiuno disattivato\')">Disattiva</button></div>
     </div>`;
@@ -2820,9 +3074,19 @@ function healthBanner(){
   if(S.detox) tags.push('🥤 Detox giorno '+S.detox.day+'/'+S.detox.days);
   if(S.fasting) tags.push('⏳ Digiuno '+S.fasting.proto+(S.fasting.proto!=='5:2'?' ('+S.fasting.start+'–'+S.fasting.end+')':''));
   if(!parts.length && !tags.length) return '';
+  const adv=[];
+  const pat=h.patologie||[];
+  if(pat.includes('Celiachia'))adv.push('🌾 esclusi tutti i cibi con glutine');
+  if(pat.includes('Colesterolo alto'))adv.push('🫀 ridotti grassi saturi e formaggi grassi');
+  if(pat.includes('Ipertensione'))adv.push('🧂 limitati salumi e cibi salati');
+  if(pat.includes('Gastrite/reflusso'))adv.push('🔥 evitati fritti, piccante e acidi');
+  if(pat.includes('Colon irritabile'))adv.push('🫘 ridotti legumi e verdure fermentabili');
+  if(pat.includes('Reni'))adv.push('💧 controllato l\'apporto di proteine');
+  if(pat.includes('Anemia'))adv.push('🩸 privilegiati cibi ricchi di ferro');
   return `<div class="card"><div class="h">🧬 Piano personalizzato per te</div>
-    ${parts.length?`<div class="sub" style="margin-bottom:6px">Adattato a: <b>${parts.join(' · ')}</b>.</div>`:''}
+    ${parts.length?`<div class="sub" style="margin-bottom:6px">L'AI ha rigenerato il piano adattandolo a: <b>${parts.join(' · ')}</b>.</div>`:''}
     ${h.diabete&&h.diabete!=='No'?`<div class="sub" style="margin-bottom:6px">🩸 Per il diabete privilegiamo indice glicemico basso e porzioni controllate di carboidrati.</div>`:''}
+    ${adv.length?`<div class="chips" style="margin:4px 0">${adv.map(a=>`<span class="chip">${a}</span>`).join('')}</div>`:''}
     ${tags.length?`<div class="chips" style="margin-top:4px">${tags.map(t=>`<span class="chip violet">${t}</span>`).join('')}</div>`:''}
     <button class="btn ghost sm" style="margin-top:10px" onclick="go('storia')">Modifica storia clinica</button>
   </div>`;
@@ -2917,7 +3181,7 @@ function submitPro(){
   if(!name||!title){toast('Inserisci nome e titolo di studio');return;}
   if(!_proCert){toast('Carica il certificato/titolo');return;}
   if(p.albo && !/^[0-9]{4,}$/.test(albo)){toast('Numero d\'albo non valido (min 4 cifre)');return;}
-  S.pro={profession:prof,ic:p.ic,ente:p.ente,name,title,uni,year,albo,reg,price:price.startsWith('€')?price:'€'+price,bio,cert:_proCert,followers:0,status:'in_verifica',submitted:true};
+  S.pro={profession:prof,ic:p.ic,ente:p.ente,name,title,uni,year,albo,reg,price:price.startsWith('€')?price:'€'+price,bio,cert:_proCert,followers:0,status:'in_verifica',submitted:true,avail:[]};
   save(); rebuild('pro'); go('pro');
   toast('Inviato! Verifica dei titoli in corso…');
   setTimeout(verifyPro,2600);
@@ -2932,6 +3196,34 @@ function verifyPro(){
   save(); if(curScreen==='pro'){rebuild('pro');go('pro');} rebuild('prenota');
   toast(S.pro.status==='verificato'?'Titoli verificati ✔️ Ora sei attivo!':'Servono documenti aggiuntivi');
 }
+const PRO_TIMES=['08:00','09:00','09:30','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','16:30','17:00','18:00','19:00'];
+function renderProAvail(){
+  const c=document.getElementById('pro-avail'); if(!c)return;
+  const av=(S.pro&&S.pro.avail)||[];
+  if(!av.length){ c.innerHTML='<div class="sub">Nessuna disponibilità inserita. I pazienti non possono ancora prenotarti: aggiungi almeno un giorno.</div>'; return; }
+  c.innerHTML=av.map((d,di)=>`<div class="card tight" style="box-shadow:none;border:1px solid var(--line);margin-bottom:8px">
+    <div class="h" style="font-size:14px">📅 ${d.label} <button onclick="proDelDate(${di})" style="float:right;background:none;border:none;color:var(--coral);font-size:15px;cursor:pointer">🗑</button></div>
+    <div class="chips" style="margin-top:6px">${(d.times||[]).map((t,ti)=>`<button class="chip sel" onclick="proDelTime(${di},${ti})">${t} ✕</button>`).join('')||'<span class="sub">nessun orario</span>'}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+      <select id="pro-t-${di}" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:10px">${PRO_TIMES.filter(t=>!(d.times||[]).includes(t)).map(t=>`<option>${t}</option>`).join('')}</select>
+      <button class="btn sm sec" style="width:auto;padding:8px 12px" onclick="proAddTime(${di})">＋ Orario</button>
+    </div>
+  </div>`).join('');
+}
+function proAddDate(){
+  const v=prompt('Data disponibile (formato GG/MM, es. 24/07):'); if(!v)return;
+  const m=v.match(/(\d{1,2})[\/\-.](\d{1,2})/); if(!m){toast('Formato non valido. Usa GG/MM');return;}
+  const day=+m[1], mon=+m[2]; const now=new Date(); let yr=now.getFullYear();
+  const d=new Date(yr,mon-1,day); if(d< new Date(now.getFullYear(),now.getMonth(),now.getDate())) d.setFullYear(yr+1);
+  const key=dateKey(d), label=dateLabel(d);
+  S.pro.avail=S.pro.avail||[];
+  if(S.pro.avail.some(x=>x.date===key)){toast('Giorno già presente');return;}
+  S.pro.avail.push({date:key,label,times:[]}); S.pro.avail.sort((a,b)=>a.date<b.date?-1:1);
+  save(); renderProAvail(); toast('Giorno aggiunto: '+label);
+}
+function proDelDate(di){ S.pro.avail.splice(di,1); save(); renderProAvail(); }
+function proAddTime(di){ const sel=document.getElementById('pro-t-'+di); if(!sel||!sel.value)return; const t=sel.value; S.pro.avail[di].times=S.pro.avail[di].times||[]; if(!S.pro.avail[di].times.includes(t)){S.pro.avail[di].times.push(t); S.pro.avail[di].times.sort();} save(); renderProAvail(); }
+function proDelTime(di,ti){ S.pro.avail[di].times.splice(ti,1); save(); renderProAvail(); }
 function proStatusHTML(){
   const s=S.pro; const rev=docReviews(s.name);
   const avg=rev.length?(rev.reduce((a,b)=>a+b.stars,0)/rev.length):null;
@@ -2961,6 +3253,13 @@ function proStatusHTML(){
     <div class="row"><div class="rt"><b>Università</b><small>${s.uni||'—'} ${s.year?'· '+s.year:''}</small></div></div>
     <div class="row"><div class="rt"><b>${s.ente}</b><small>N. albo: ${s.albo||'—'} · ${s.reg||'—'}</small></div><div class="rv">${s.status==='verificato'?'<span style="color:var(--green-d)">✔️</span>':'⏳'}</div></div>
     ${s.cert?`<div style="margin-top:10px"><img src="${s.cert}" style="max-height:120px;border-radius:12px"></div>`:''}
+  </div>
+
+  <div class="card">
+    <div class="h">📅 Le tue disponibilità</div>
+    <div class="sub" style="margin-bottom:10px">Aggiungi i giorni e gli orari in cui i pazienti possono prenotarti. Compaiono nel loro calendario in fase di prenotazione.</div>
+    <div id="pro-avail"></div>
+    <button class="btn sec sm" style="margin-top:10px" onclick="proAddDate()">＋ Aggiungi un giorno disponibile</button>
   </div>
 
   <div class="card">
@@ -3049,6 +3348,13 @@ function authTab(mode,btn){
   const segs=document.querySelectorAll('#auth-seg button'); segs.forEach(b=>b.classList.remove('on'));
   if(btn)btn.classList.add('on'); else if(segs[mode==='login'?0:1]) segs[mode==='login'?0:1].classList.add('on');
   const f=document.getElementById('auth-forms'); if(!f)return;
+  if(!cloudOn()){
+    f.innerHTML=`<div class="alert info" style="text-align:left;margin-bottom:12px"><span>☁️</span><div>Per accedere serve attivare il collegamento sicuro (una volta sola). Incolla le due chiavi del tuo progetto Supabase.</div></div>
+      <div class="field"><label>Project URL</label><input id="cl-url2" placeholder="https://xxxx.supabase.co"></div>
+      <div class="field"><label>anon / publishable key</label><input id="cl-key2" placeholder="sb_publishable_..."></div>
+      <button class="btn" onclick="saveCloudCfg2()">Attiva accesso</button>`;
+    return;
+  }
   if(mode==='login'){
     f.innerHTML=`<div class="field"><label>Email</label><input id="aw-email" type="email" placeholder="tuamail@esempio.com"></div>
       <div class="field"><label>Password</label><input id="aw-pass" type="password" placeholder="password"></div>
@@ -3067,6 +3373,14 @@ function authTab(mode,btn){
       <button class="btn" style="margin-top:8px" onclick="authRegister()">Registrati</button>
       <div class="tiny" style="margin-top:10px">Ti invieremo un'email di verifica: confermala, poi torna qui e accedi.</div>`;
   }
+}
+function saveCloudCfg2(){
+  const url=(document.getElementById('cl-url2').value||'').trim().replace(/\/$/,'');
+  const key=(document.getElementById('cl-key2').value||'').trim();
+  if(!/^https:\/\/.+\.supabase\.co$/.test(url)){toast('URL non valido (deve finire con .supabase.co)');return;}
+  if(key.length<20){toast('Chiave non valida');return;}
+  localStorage.setItem('aurea_cloud',JSON.stringify({url,key}));
+  if(cloudInit()){ toast('Accesso attivato ✓'); authTab('login'); } else { toast('Libreria non caricata: apri l\'app online'); }
 }
 function pwRules(p){ return {len:(p||'').length>=8, up:/[A-Z]/.test(p||''), low:/[a-z]/.test(p||''), num:/[0-9]/.test(p||'')}; }
 function pwCheck(p){ const r=pwRules(p); const set=(id,ok)=>{const e=document.getElementById(id);if(e)e.innerHTML=(ok?'🟢':'⚪')+e.textContent.slice(1);}; set('pw-len',r.len);set('pw-up',r.up);set('pw-low',r.low);set('pw-num',r.num); }
@@ -3093,7 +3407,7 @@ async function authRegister(){
 
 /* ============ BUILD ============ */
 const BUILDERS={
-  home:homeHTML, diario:diarioHTML, scanner:scannerHTML, piano:planHTML,
+  home:homeHTML, diario:diarioHTML, scanner:scannerHTML, addfood:addfoodHTML, piano:planHTML,
   ciclo:cicloHTML, prenota:prenotaHTML, shop:shopHTML, coach:coachHTML,
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
@@ -3112,6 +3426,7 @@ function afterRender(id){
   if(id==='community'){renderComBody('perte');}
   if(id==='storia'){renderIntol();}
   if(id==='digiuno'){fastStatus();}
+  if(id==='pro'){renderProAvail();}
 }
 function boot(){
   restore();
@@ -3122,10 +3437,11 @@ function boot(){
   go('home');
   save();
   if(S.stepsConnected){ try{ startPedometer(); }catch(e){} }
+  // La PRIMA schermata è sempre login/registrazione, finché non si è loggati
+  showAuthWall();
   if(cloudOn()){
-    showAuthWall();
     cloudCheckSession().then(u=>{ if(u){ hideAuthWall(); if(!S.setup){showOnboard();} else {rebuildAll();go('home');} } });
-  } else if(!S.setup){ showOnboard(); }
+  }
   // clock
   function tick(){const el=document.getElementById('clock');if(el)el.textContent=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');
     if(S.fasting && document.getElementById('sc-digiuno') && document.getElementById('sc-digiuno').classList.contains('active')) fastStatus();}
