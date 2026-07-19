@@ -440,6 +440,7 @@ const S = {
   weight:64.5,
   wStart:69.0, wNow:64.5, wGoal:60.0, wWeeks:12,
   disliked:[],
+  cycleTracking:true,
   planChoices:{},
   cart:[],
   reminders:[
@@ -531,7 +532,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -562,8 +563,11 @@ function restore(){ try{
 function resetData(){ try{ localStorage.removeItem('aurea_data'); }catch(e){} location.reload(); }
 
 /* ============ CLOUD (Supabase) — modalità reale ============ */
+// Configurazione predefinita incorporata: così l'app è già collegata al database
+// per tutti, senza dover incollare la chiave. (La anon/publishable key è pubblica per design.)
+const DEFAULT_CLOUD={url:"https://amireugtsltjhjzkdkkr.supabase.co", key:"sb_publishable_EQKm1CwP6p90Keds3x-ldw_GIjOGkE7"};
 let SB=null, cloudUser=null;
-function cloudCfg(){ try{return JSON.parse(localStorage.getItem('aurea_cloud')||'null');}catch(e){return null;} }
+function cloudCfg(){ try{ const c=JSON.parse(localStorage.getItem('aurea_cloud')||'null'); if(c&&c.url&&c.key)return c; }catch(e){} return (DEFAULT_CLOUD.url&&DEFAULT_CLOUD.key)?DEFAULT_CLOUD:null; }
 function cloudInit(){
   const c=cloudCfg();
   if(c&&c.url&&c.key&&window.supabase){ try{ SB=window.supabase.createClient(c.url,c.key); return true; }catch(e){ SB=null; } }
@@ -827,7 +831,7 @@ const MENU=[
 ];
 function renderMenu(){
   const g=document.getElementById('menu-grid'); if(!g)return;
-  g.innerHTML=MENU.filter(m=>!(m.fem&&S.user.sex==='M')).map(m=>
+  g.innerHTML=MENU.filter(m=>!(m.fem&&!cycleOn())).map(m=>
     `<button class="qa" onclick="menuGo('${m.id}')"><span class="qi" style="background:var(--mint)">${m.ic}</span>${m.l}</button>`
   ).join('');
 }
@@ -890,7 +894,7 @@ function homeHTML(){
     <button class="qa" onclick="go('frigo')"><span class="qi" style="background:#e8f6ff">🧊</span>Frigo</button>
   </div>
   <div class="quick">
-    ${S.user.sex==='F'?`<button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s)">🌸</span>Ciclo</button>`:`<button class="qa" onclick="go('allenamento')"><span class="qi" style="background:var(--coral-s)">💪</span>Forma</button>`}
+    ${cycleOn()?`<button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s)">🌸</span>Ciclo</button>`:`<button class="qa" onclick="go('allenamento')"><span class="qi" style="background:var(--coral-s)">💪</span>Forma</button>`}
     <button class="qa" onclick="go('community')"><span class="qi" style="background:#fff0e0">👥</span>Community</button>
     <button class="qa" onclick="go('shop')"><span class="qi" style="background:var(--mint)">💊</span>Integr.</button>
     <button class="qa" onclick="openMenu()"><span class="qi" style="background:var(--violet-s)">☰</span>Tutto</button>
@@ -900,7 +904,7 @@ function homeHTML(){
   <div class="section-title">Prossimi appuntamenti <span class="more" onclick="go('prenota')">Vedi tutti</span></div>
   <div class="card tight" id="home-appts"></div>
 
-  ${S.user.sex==='F'?`<div class="banner gp" onclick="go('ciclo')" style="margin-top:16px;cursor:pointer">
+  ${cycleOn()?`<div class="banner gp" onclick="go('ciclo')" style="margin-top:16px;cursor:pointer">
     <span class="b-ic">🌸</span>
     <h4>Fase ${cyclePhase().n.toLowerCase()} · giorno ${cycleDayNum()}</h4>
     <p>${cyclePhase().txt} Tocca per impostare il ciclo e le voglie.</p>
@@ -1466,8 +1470,12 @@ function segPick(id,btn){document.querySelectorAll('#'+id+' button').forEach(b=>
 
 /* ---------- CICLO / ORMONALE ---------- */
 function cyc(){ if(!S.cycle) S.cycle={start:1,cycleLen:28,periodLen:5}; return S.cycle; }
+// il ciclo si vede solo se: utente NON uomo E monitoraggio attivo
+function cycleOn(){ return S.user.sex!=='M' && S.cycleTracking!==false; }
+function toggleCycleTracking(el){ S.cycleTracking=!(S.cycleTracking!==false); if(el)el.classList.toggle('on',S.cycleTracking); save(); renderMenu(); rebuild('home'); if(!S.cycleTracking && curScreen==='ciclo')go('home'); toast(S.cycleTracking?'Monitoraggio ciclo attivo':'Monitoraggio ciclo disattivato'); }
 function cycleClass(d){
   const c=cyc(), s=c.start;
+  if((c.logged||[]).includes(d)) return 'period'; // giorni registrati dall'utente
   if(d>=s && d<=s+c.periodLen-1) return 'period';
   const ov=s+c.cycleLen-14;
   if(d===ov) return 'ovul';
@@ -1484,10 +1492,23 @@ function cyclePhase(){ const c=cyc(), dc=cycleDayNum(), ov=c.cycleLen-14;
   return {n:'Luteale',i:3,txt:'Possibili voglie e gonfiore: più fibre, magnesio e pasti regolari.'};
 }
 function fmtDay(d){ return d<=31 ? d+' lug' : (d-31)+' ago'; }
-function setPeriodStart(d){cyc().start=d;save();rebuild('ciclo');go('ciclo');rebuild('home');toast('Inizio mestruazioni: '+d+' luglio');}
-function adjustCycle(field,delta){const c=cyc();if(field==='cycleLen')c.cycleLen=Math.min(35,Math.max(21,c.cycleLen+delta));else c.periodLen=Math.min(8,Math.max(2,c.periodLen+delta));save();rebuild('ciclo');go('ciclo');rebuild('home');}
+function recomputeCycle(){ const c=cyc(); const lg=(c.logged||[]).slice().sort((a,b)=>a-b); if(!lg.length)return;
+  c.start=lg[0]; let len=1; for(let k=1;k<lg.length;k++){ if(lg[k]===lg[k-1]+1)len++; else break; } c.periodLen=Math.max(1,Math.min(8,len)); }
+// tocca un giorno del calendario per registrare/togliere un giorno di mestruazioni
+function setPeriodStart(d){ const c=cyc(); c.logged=c.logged||[]; const i=c.logged.indexOf(d);
+  if(i<0)c.logged.push(d); else c.logged.splice(i,1);
+  recomputeCycle(); save(); rebuild('ciclo'); rebuild('home');
+  toast(i<0?('Registrato: mestruazioni il '+d+' luglio'):('Rimosso il '+d+' luglio')); }
+function clearCycleLog(){ const c=cyc(); c.logged=[]; save(); rebuild('ciclo'); rebuild('home'); toast('Giorni registrati azzerati'); }
+function saveTodayCycle(){ const sel=document.querySelector('#today-flow .chip.sel'); const flow=sel?sel.getAttribute('data-flow'):null;
+  const c=cyc(); c.logged=c.logged||[]; const today=19;
+  if(flow&&flow!=='Assente'){ if(!c.logged.includes(today)){ c.logged.push(today); recomputeCycle(); } toast('Registrato: oggi giorno di ciclo ('+flow.toLowerCase()+') 🌸'); }
+  else { const i=c.logged.indexOf(today); if(i>=0){c.logged.splice(i,1);recomputeCycle();} toast('Registrazione di oggi salvata 🌸'); }
+  save(); rebuild('ciclo'); rebuild('home'); }
+function adjustCycle(field,delta){const c=cyc();if(field==='cycleLen')c.cycleLen=Math.min(35,Math.max(21,c.cycleLen+delta));else c.periodLen=Math.min(8,Math.max(2,c.periodLen+delta));save();rebuild('ciclo');rebuild('home');}
 function setCraving(v,btn){S.cravings=(S.cravings===v?null:v);document.querySelectorAll('#crave-seg .chip').forEach(b=>b.classList.remove('sel'));if(S.cravings&&btn)btn.classList.add('sel');save();rebuild('piano');toast(S.cravings?('Dieta adattata: più '+v.toLowerCase()+', entro le tue kcal'):'Voglie azzerate');}
 function cicloHTML(){
+  if(!cycleOn()) return `<div class="topbar"><div class="hello"><div class="k">Non disponibile</div><div class="n">Monitoraggio ciclo</div></div></div><div class="card" style="text-align:center"><div style="font-size:44px">🌸</div><div class="sub" style="margin:8px 0">${S.user.sex==='M'?'Questa sezione riguarda la salute femminile.':'Il monitoraggio del ciclo è disattivato.'}</div>${S.user.sex!=='M'?`<button class="btn sm" onclick="toggleCycleTracking();go('ciclo')">Riattiva monitoraggio</button>`:''}<button class="btn sec sm" style="margin-top:8px" onclick="go('home')">← Home</button></div>`;
   const c=cyc(); const ph=cyclePhase(); const dc=cycleDayNum();
   const ov=c.start+c.cycleLen-14; const np=c.start+c.cycleLen;
   const days=Array.from({length:35},(_,i)=>i+1);
@@ -1502,7 +1523,7 @@ function cicloHTML(){
 
   <div class="card">
     <div class="h">✏️ Imposta il tuo ciclo</div>
-    <div class="sub" style="margin-bottom:10px">Tocca nel calendario il <b>primo giorno delle ultime mestruazioni</b>, poi regola le durate. L'app aggiorna fasi e previsioni.</div>
+    <div class="sub" style="margin-bottom:10px">Tocca nel calendario <b>tutti i giorni in cui hai le mestruazioni</b> (tocca di nuovo per togliere). L'app calcola da sé fasi e previsioni. Puoi anche correggere le durate qui sotto.</div>
     <div class="grid2">
       <div style="text-align:center"><div class="sub">Durata ciclo</div><div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px"><button class="add" style="width:32px;height:32px;background:var(--line);color:var(--ink);font-size:18px" onclick="adjustCycle('cycleLen',-1)">−</button><b>${c.cycleLen} gg</b><button class="add" style="width:32px;height:32px;font-size:18px" onclick="adjustCycle('cycleLen',1)">＋</button></div></div>
       <div style="text-align:center"><div class="sub">Durata mestruazioni</div><div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px"><button class="add" style="width:32px;height:32px;background:var(--line);color:var(--ink);font-size:18px" onclick="adjustCycle('periodLen',-1)">−</button><b>${c.periodLen} gg</b><button class="add" style="width:32px;height:32px;font-size:18px" onclick="adjustCycle('periodLen',1)">＋</button></div></div>
@@ -1510,7 +1531,7 @@ function cicloHTML(){
   </div>
 
   <div class="card">
-    <div class="h">📅 Calendario ciclo <span class="pill">Luglio · tocca un giorno</span></div>
+    <div class="h">📅 Calendario ciclo <span class="pill">Luglio · tocca i giorni</span></div>
     <div class="cal">
       ${["L","M","M","G","V","S","D"].map(d=>`<div class="dow">${d}</div>`).join('')}
       ${days.map(d=>{
@@ -1525,6 +1546,7 @@ function cicloHTML(){
       <span><i style="background:var(--violet)"></i>Ovulazione</span>
       <span><i style="background:var(--coral-s)"></i>Previsione</span>
     </div>
+    ${(c.logged&&c.logged.length)?`<div class="sub" style="margin-top:10px">Registrati: <b>${c.logged.slice().sort((a,b)=>a-b).map(x=>x+' lug').join(', ')}</b> · <a onclick="clearCycleLog()" style="color:var(--coral);font-weight:700;cursor:pointer">azzera</a></div>`:''}
   </div>
 
   <div class="card">
@@ -1544,14 +1566,14 @@ function cicloHTML(){
   </div>
 
   <div class="card">
-    <div class="h">📝 Registra oggi</div>
-    <div class="sub" style="margin-bottom:8px">Flusso</div>
-    <div class="chips" style="margin-bottom:12px">${["Assente","Leggero","Medio","Abbondante"].map(f=>`<button class="chip pink" onclick="segSelect(this)">${f}</button>`).join('')}</div>
+    <div class="h">📝 Registra oggi <span class="pill">19 lug</span></div>
+    <div class="sub" style="margin-bottom:8px">Flusso <span style="color:var(--muted)">— se selezioni un flusso, oggi viene segnato come giorno di ciclo</span></div>
+    <div class="chips" id="today-flow" style="margin-bottom:12px">${["Assente","Leggero","Medio","Abbondante"].map(f=>`<button class="chip pink" onclick="segSelect(this)" data-flow="${f}">${f}</button>`).join('')}</div>
     <div class="sub" style="margin-bottom:8px">Sintomi</div>
     <div class="chips" style="margin-bottom:12px">${["Crampi","Mal di testa","Acne","Gonfiore","Stanchezza","Umore ↓","Fame","Seno dolente"].map(f=>`<button class="chip violet" onclick="this.classList.toggle('sel')">${f}</button>`).join('')}</div>
     <div class="sub" style="margin-bottom:8px">Umore & energia</div>
     <div class="chips" style="margin-bottom:14px">${["😀","🙂","😐","😞","😣"].map(f=>`<button class="chip grey" style="font-size:18px" onclick="segSelect(this)">${f}</button>`).join('')}</div>
-    <button class="btn pink" onclick="toast('Dati del giorno salvati 🌸')">Salva registrazione</button>
+    <button class="btn pink" onclick="saveTodayCycle()">Salva registrazione</button>
   </div>
 
   <div class="card">
@@ -1983,7 +2005,7 @@ function profiloHTML(){
   </div>
 
   <div class="card tight">
-    <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--coral-s)">🌸</div><div class="tt"><b>Monitoraggio ciclo</b><small>Salute femminile & ormonale</small></div><div class="switch on" onclick="this.classList.toggle('on')"><i></i></div></div>
+    ${S.user.sex!=='M'?`<div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--coral-s)">🌸</div><div class="tt"><b>Monitoraggio ciclo</b><small>Salute femminile & ormonale</small></div><div class="switch ${S.cycleTracking!==false?'on':''}" onclick="toggleCycleTracking(this)"><i></i></div></div>`:''}
     <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:#e8f1ff">⌚</div><div class="tt"><b>Sincronizza wearable</b><small>Apple Health · Google Fit</small></div><div class="switch on" onclick="this.classList.toggle('on')"><i></i></div></div>
     <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">🔔</div><div class="tt"><b>Notifiche</b><small>Promemoria & consigli</small></div><div class="switch on" onclick="this.classList.toggle('on')"><i></i></div></div>
   </div>
@@ -2113,15 +2135,13 @@ function planningHTML(){
 }
 function planTab(t,btn){document.querySelectorAll('#plan-tab button').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');renderPlanBody(t);}
 function calDayInfo(d){
-  let cls='',cycle='';
-  if(d>=1&&d<=5){cls='period';cycle='Mestruazioni';}
-  else if(d>=8&&d<=12){cls='fertile';cycle='Finestra fertile';}
-  else if(d===13){cls='ovul';cycle='Ovulazione';}
-  else if(d>=29&&d<=33){cls='pred';cycle='Ciclo previsto';}
-  return {cls,cycle};
+  if(!cycleOn()) return {cls:'',cycle:''};
+  const cls=cycleClass(d); // usa i valori reali del ciclo impostati dall'utente
+  const label={period:'Mestruazioni',fertile:'Finestra fertile',ovul:'Ovulazione',pred:'Ciclo previsto'}[cls]||'';
+  return {cls,cycle:label};
 }
 function renderCalDetail(){
-  const d=S.calSel;const ev=PLAN_EV[d]||[];const ci=calDayInfo(d);
+  const d=S.calSel;const ev=(PLAN_EV[d]||[]).filter(e=>cycleOn()||!/ciclo|self-care/i.test(e));const ci=calDayInfo(d);
   const el=document.getElementById('cal-detail');if(!el)return;
   const all=ev.concat((S.events&&S.events[d])||[]);
   el.innerHTML=`
@@ -2199,8 +2219,8 @@ function renderPlanBody(t){
         <div class="h">Luglio · a colpo d'occhio</div>
         <div class="grid2">
           <div class="stat"><div class="ico" style="background:var(--mint);color:var(--green-d)">⚖️</div><div class="v">-2.1 kg</div><div class="l">obiettivo -3 · 70%</div></div>
-          <div class="stat"><div class="ico" style="background:var(--coral-s);color:var(--coral)">🌸</div><div class="v">8 ago</div><div class="l">prossimo ciclo</div></div>
-          <div class="stat"><div class="ico" style="background:#e8f1ff;color:var(--blue)">🩺</div><div class="v">5</div><div class="l">appuntamenti</div></div>
+          ${cycleOn()?`<div class="stat"><div class="ico" style="background:var(--coral-s);color:var(--coral)">🌸</div><div class="v">${fmtDay(cyc().start+cyc().cycleLen)}</div><div class="l">prossimo ciclo</div></div>`:`<div class="stat"><div class="ico" style="background:#e8f1ff;color:var(--blue)">💧</div><div class="v">${S.water||0}/${S.waterGoal}</div><div class="l">idratazione</div></div>`}
+          <div class="stat"><div class="ico" style="background:#e8f1ff;color:var(--blue)">🩺</div><div class="v">${S.appointments.length}</div><div class="l">appuntamenti</div></div>
           <div class="stat"><div class="ico" style="background:var(--violet-s);color:var(--violet)">🔥</div><div class="v">18</div><div class="l">allenamenti</div></div>
         </div>
       </div>
@@ -2648,8 +2668,13 @@ function myShortCard(s){
   </div>`;
 }
 function deleteMyShort(id){ if(!confirm('Eliminare questo video?'))return; MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); }
-async function cloudDeletePost(id){ if(!cloudOn())return; try{ await SB.from('posts').delete().eq('id',id); }catch(e){} }
-async function deletePost(id){ if(!confirm('Eliminare questo video?'))return; await cloudDeletePost(id); renderComBody('perte'); toast('Video eliminato'); }
+async function cloudDeletePost(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('posts').delete().eq('id',id); }catch(e){ return {error:e}; } }
+async function deletePost(id){ if(!confirm('Eliminare questo video?'))return;
+  const res=await cloudDeletePost(id)||{};
+  if(res.error){ toast('Non eliminato: '+(res.error.message||res.error)); return; }
+  // rimuovo subito la card e ricarico il feed dal cloud
+  const card=document.querySelector('.short[data-pid="'+id+'"]'); if(card)card.remove();
+  renderComBody('perte'); toast('Video eliminato'); }
 function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; const preset=card.getAttribute('data-preset');
   if(v){
     v.addEventListener('play',()=>{ auds.forEach(a=>{try{a.currentTime=v.currentTime||0;a.play().catch(()=>{});}catch(e){}}); if(preset){ try{card._pctx&&card._pctx.close&&card._pctx.close();}catch(e){} card._pctx=playPreset(preset,'preview'); } });
@@ -3342,7 +3367,8 @@ async function doSignIn(){
 }
 async function doSignOut(){ await cloudSignOut(); rebuild('cloud'); go('cloud'); showAuthWall(); toast('Uscita effettuata'); }
 /* schermata iniziale: accedi / registrati */
-function showAuthWall(){authTab('login');const e=document.getElementById('authwall');if(e)e.style.display='flex';}
+let _authBusy=false;
+function showAuthWall(){_authBusy=false;authTab('login');const e=document.getElementById('authwall');if(e)e.style.display='flex';}
 function hideAuthWall(){const e=document.getElementById('authwall');if(e)e.style.display='none';}
 function authTab(mode,btn){
   const segs=document.querySelectorAll('#auth-seg button'); segs.forEach(b=>b.classList.remove('on'));
@@ -3439,8 +3465,11 @@ function boot(){
   if(S.stepsConnected){ try{ startPedometer(); }catch(e){} }
   // La PRIMA schermata è sempre login/registrazione, finché non si è loggati
   showAuthWall();
+  // se l'utente inizia a scrivere le credenziali, non spostarlo più in automatico
+  const aw=document.getElementById('authwall');
+  if(aw){ ['focusin','input'].forEach(ev=>aw.addEventListener(ev,()=>{ _authBusy=true; })); }
   if(cloudOn()){
-    cloudCheckSession().then(u=>{ if(u){ hideAuthWall(); if(!S.setup){showOnboard();} else {rebuildAll();go('home');} } });
+    cloudCheckSession().then(u=>{ if(u && !_authBusy){ hideAuthWall(); if(!S.setup){showOnboard();} else {rebuildAll();go('home');} } });
   }
   // clock
   function tick(){const el=document.getElementById('clock');if(el)el.textContent=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');
