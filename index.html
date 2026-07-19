@@ -390,8 +390,14 @@ body{
       <div class="field"><label>Interventi o patologie (facoltativo)</label><input id="onb-cond" placeholder="es. celiachia, tiroide, colecisti"></div>
       <div id="onb-grav-wrap" class="field"><div class="tog" style="padding:6px 0"><div class="tt"><b>Gravidanza / allattamento</b></div><div class="switch" id="onb-grav" onclick="this.classList.toggle('on')"><i></i></div></div></div>
 
+      <div class="field"><label>Come vuoi usare Auréa?</label>
+        <div class="seg" id="onb-role">
+          <button class="on" onclick="onbSet('role','Utente',this,'onb-role')">👤 Utente</button>
+          <button onclick="onbSet('role','Professionista',this,'onb-role')">🎓 Professionista</button>
+        </div>
+        <div class="sub" style="margin-top:6px">Come Professionista (nutrizionista, medico, coach…) potrai lavorare sulla piattaforma dopo la verifica dei titoli. Anche gli utenti possono creare video.</div>
+      </div>
       <button class="btn" style="margin-top:8px" onclick="finishOnboard()">Genera la mia dieta personalizzata</button>
-      <button class="btn sec sm" style="margin-top:10px" onclick="skipOnboard()">Esplora la demo</button>
     </div>
   </div>
 
@@ -478,7 +484,7 @@ const S = {
   stepsConnected:false,
   health:{interventi:"",diabete:"No",intolleranze:[],patologie:[],farmaci:"",gravidanza:false,note:""}
 };
-let onbData={sex:"F",goal:"Dimagrimento",diabete:"No"};
+let onbData={sex:"F",goal:"Dimagrimento",diabete:"No",role:"Utente"};
 
 /* ============ WEIGHT & PLAN ENGINE ============ */
 function weightPlan(){
@@ -669,9 +675,11 @@ function finishOnboard(){
   intol.forEach(x=>{ if(!S.disliked.map(d=>d.toLowerCase()).includes(x.toLowerCase())) S.disliked.push(x); });
   // calorie partono da zero
   S.intake={kcal:0,prot:0,carb:0,fat:0}; S.foodLog=[]; S.water=0; S.planChoices={};
+  S.user.role=onbData.role||'Utente';
   S.setup=true; weightPlan(); save();
-  rebuildAll(); hideOnboard(); go('home');
-  toast('Dieta personalizzata creata · ciao '+(S.user.name)+'! 🌿');
+  rebuildAll(); hideOnboard();
+  if(S.user.role==='Professionista' && !S.pro){ go('pro'); toast('Completa la registrazione professionale per lavorare sulla piattaforma'); }
+  else { go('home'); toast('Dieta personalizzata creata · ciao '+(S.user.name)+'! 🌿'); }
 }
 function skipOnboard(){S.setup=true;save();hideOnboard();go('home');}
 function logout(){S.setup=false;save();document.getElementById('onb-name').value='';showOnboard();}
@@ -833,11 +841,11 @@ function homeHTML(){
   </div>
 
   <div class="grid3" style="margin-bottom:${S.stepsConnected?'16px':'8px'}">
-    <div class="stat"><div class="ico" style="background:#e8f1ff;color:var(--blue)">👟</div><div class="v" id="steps-val">${((S.steps||0)/1000).toFixed(1)}k</div><div class="l">Passi / 10k</div></div>
-    <div class="stat"><div class="ico" style="background:#e8f6ff;color:#2a9adf">💧</div><div class="v">${S.water}/${S.waterGoal}</div><div class="l">Bicchieri</div></div>
+    <div class="stat" onclick="setStepsManual()" style="cursor:pointer"><div class="ico" style="background:#e8f1ff;color:var(--blue)">👟</div><div class="v" id="steps-val">${((S.steps||0)/1000).toFixed(1)}k</div><div class="l">Passi · tocca</div></div>
+    <div class="stat" onclick="setWaterHome()" style="cursor:pointer"><div class="ico" style="background:#e8f6ff;color:#2a9adf">💧</div><div class="v">${S.water}/${S.waterGoal}</div><div class="l">Acqua · tocca</div></div>
     <div class="stat" onclick="setSleep()" style="cursor:pointer"><div class="ico" style="background:var(--violet-s);color:var(--violet)">😴</div><div class="v">${S.sleep?S.sleep+'h':'—'}</div><div class="l">Sonno · tocca</div></div>
   </div>
-  ${S.stepsConnected?'':`<button class="btn ghost sm" style="margin-bottom:16px" onclick="connectSteps()">👟 Connetti il contapassi del telefono</button>`}
+  ${S.stepsConnected?'':`<button class="btn ghost sm" style="margin-bottom:16px" onclick="connectSteps()">👟 Connetti il contapassi automatico</button>`}
 
   <div class="section-title">Obiettivo peso <span class="more" onclick="go('piano')">Adatta piano</span></div>
   <div class="card">
@@ -953,6 +961,8 @@ function diarioHTML(){
   </div>`;
 }
 function setWater(n){S.water=(S.water===n?n-1:n);rebuild('diario');rebuild('home');toast('Idratazione aggiornata');}
+function setWaterHome(){ const v=prompt('Quanti bicchieri d\'acqua hai bevuto oggi? (obiettivo '+S.waterGoal+')', S.water||0); if(v===null)return; const n=parseInt(v); if(isNaN(n)||n<0||n>30){toast('Valore non valido');return;} S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); }
+function setStepsManual(){ const v=prompt('Quanti passi hai fatto oggi?', S.steps||0); if(v===null)return; const n=parseInt((''+v).replace(/\./g,'')); if(isNaN(n)||n<0||n>100000){toast('Valore non valido');return;} S.steps=n; save(); rebuild('home'); toast('Passi: '+n); }
 function sleepNeeded(){ const a=S.user.age||30; if(a<18) return {min:8,ideal:9}; if(a>64) return {min:7,ideal:8}; return {min:7,ideal:8}; }
 function setSleep(){ const v=prompt('Quante ore hai dormito stanotte? (es. 6.5)', S.sleep||''); if(v===null)return; const h=parseFloat((''+v).replace(',','.')); if(isNaN(h)||h<0||h>16){toast('Valore non valido');return;} S.sleep=+h.toFixed(1); save(); rebuild('home'); const need=sleepNeeded(); toast(h<need.min?('Sonno: '+S.sleep+'h · sotto il consigliato, guarda i consigli'):('Sonno aggiornato: '+S.sleep+'h')); }
 function sleepHabits(){ return ["📵 Niente schermi 1h prima","🕒 Orari regolari","☕ Stop caffeina dopo le 16","🌡️ Camera fresca e buia","🍵 Tisana rilassante","🧘 Respirazione prima di dormire"]; }
@@ -2174,6 +2184,7 @@ function renderComBody(t){
       cloudFeed().then(posts=>{
         const ranked=posts.map(p=>({p,sc:(p.likes||0)*3 + (p.diet===S.diet?50:0) + (p.goal===S.user.goal?40:0)})).sort((a,b)=>b.sc-a.sc).map(x=>x.p);
         b.innerHTML=(mine||'')+(posts.length?`<div class="sub" style="margin:0 4px 8px">✨ Feed reale personalizzato per la tua dieta ${S.diet||''} e obiettivo ${S.user.goal||''}</div><div class="shorts-feed" id="shorts-feed">${ranked.map(realShortCard).join('')}</div>`:(mine?'':`<div class="card" style="text-align:center"><div style="font-size:44px">🎬</div><div class="h" style="justify-content:center">Ancora nessun video</div><div class="sub">Sii il primo! Tocca <b>🎬 Crea</b> in alto.</div></div>`));
+        wireFeedMedia(b);
       });
       return;
     }
@@ -2181,6 +2192,7 @@ function renderComBody(t){
     if(!list.length&&!mine){b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Non segui ancora nessuno.<br>Vai su "Per te" e tocca <b>+ Segui</b> sui creator che ti piacciono.</div></div>';return;}
     b.innerHTML=(mine||'')+`<div class="sub" style="margin:0 4px 8px">${t==='perte'?'✨ Feed personalizzato per la tua dieta '+(S.diet||'')+' e il tuo obiettivo '+(S.user.goal||''):'👥 Solo i creator che segui'}${cloudOn()?'':' · <a onclick="go(\'cloud\')" style="color:var(--green-d);font-weight:700;cursor:pointer">attiva video reali</a>'}</div>
       <div class="shorts-feed" id="shorts-feed">${list.map(s=>shortCard(s)).join('')}</div>`;
+    wireFeedMedia(b);
   } else {
     b.innerHTML=`
       <div class="alert ok"><span>💬</span><div><b>Gruppo "Percorso benessere"</b> · scambiatevi idee, ricette e supporto in tempo reale.</div></div>
@@ -2217,15 +2229,16 @@ function realShortCard(p){
   const musicName=p.music?(p.music.name||p.music.preset):'';
   return `<div class="short" data-pid="${p.id}">
     <video src="${p.video_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" playsinline loop ${p.mute?'muted':''} controls preload="metadata"></video>
-    ${ovs.map(o=>`<div style="position:absolute;left:50%;top:${o.top||'45%'};transform:translateX(-50%);color:${o.color||'#fff'};font-weight:800;font-size:${o.size||24}px;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;max-width:88%">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+    ${ovs.map(o=>`<div style="${ovStyle(o)}">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
     ${p.music&&p.music.src?`<audio src="${p.music.src}" loop></audio>`:''}
     ${p.voiceover?`<audio src="${p.voiceover}" loop></audio>`:''}
     <div class="grad"></div>
-    <div class="badge">▶ ${p.type||'Video'}${musicName?' · 🎵 '+musicName:''}</div>
+    <div class="badge">▶ ${p.type||'Video'}${musicName?' · 🎵 '+musicName:''}${p.music&&p.music.link?` · <a href="${p.music.link}" target="_blank" style="color:#fff;text-decoration:underline">apri</a>`:''}</div>
     <div class="rail">
       <button onclick="likeRealPost('${p.id}',${p.likes||0},this)"><span>🤍</span><span class="cnt">${fmt(p.likes||0)}</span></button>
       <button onclick="toast('Commenti in arrivo')"><span>💬</span><span class="cnt">0</span></button>
       <button onclick="toast('Condiviso 🔗')"><span>↗</span><span class="cnt">0</span></button>
+      ${(cloudUser&&p.user_id===cloudUser.id)?`<button onclick="deletePost('${p.id}')"><span>🗑</span><span class="cnt">Elimina</span></button>`:''}
     </div>
     <div class="info">
       <div class="uname">@${(p.author||'utente')}</div>
@@ -2249,12 +2262,16 @@ function openEditor(src,file,draft){
   document.getElementById('editor').classList.add('open'); renderEditor();
 }
 function closeEditor(){ stopBg(); if(_voiceRec&&_voiceRec.state==='recording'){try{_voiceRec.stop();}catch(e){}} const e=document.getElementById('editor'); e.classList.remove('open'); e.innerHTML=''; }
+let _selOv=-1, _ovDrag=null;
 function renderEditor(){
   const st=_editState; const e=document.getElementById('editor');
+  const ovX=o=>o.x!=null?o.x:50, ovY=o=>o.y!=null?o.y:(o.top?parseFloat(o.top):45);
   e.innerHTML=`
-   <div class="ed-stage" id="ed-stage">
+   <div class="ed-stage" id="ed-stage" onpointermove="ovMove(event)" onpointerup="ovUp(event)" onpointerleave="ovUp(event)">
      <video id="ed-video" src="${_editSrc}" playsinline autoplay loop ${st.muteOriginal?'muted':''}></video>
-     ${st.overlays.map((o,i)=>`<div class="ed-ov" style="top:${o.top};color:${o.color||'#fff'};font-size:${o.size||24}px" onclick="editOverlay(${i})">${o.text}</div>`).join('')}
+     ${st.overlays.map((o,i)=>`<div class="ed-ov" data-oi="${i}" style="left:${ovX(o)}%;top:${ovY(o)}%;transform:translate(-50%,-50%);color:${o.color||'#fff'};font-size:${o.size||26}px;${i===_selOv?'outline:1.5px dashed rgba(255,255,255,.75);border-radius:8px;':''}" onpointerdown="ovDown(event,${i})">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+     ${st.music&&st.music.src?`<audio id="ed-music" src="${st.music.src}" loop></audio>`:''}
+     ${st.voiceover?`<audio id="ed-voice" src="${st.voiceover}" loop></audio>`:''}
    </div>
    <div class="ed-top">
      <button onclick="closeEditor()" style="background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:12px;padding:9px 13px;font-weight:800">✕</button>
@@ -2262,27 +2279,64 @@ function renderEditor(){
    </div>
    <div class="ed-tools">
      <button onclick="addOverlay()"><span>🅰️</span><small>Testo</small></button>
-     <button onclick="pickMusic()"><span>🎵</span><small>Musica</small></button>
+     <button onclick="openMusicPanel()"><span>🎵</span><small>Musica</small></button>
      <button onclick="toggleVoice()"><span>🎙️</span><small id="voice-lbl">Doppia</small></button>
      <button onclick="toggleMute()"><span>${st.muteOriginal?'🔇':'🔊'}</span><small>Audio</small></button>
    </div>
+   <div id="ed-ovbar" style="position:absolute;bottom:148px;left:0;right:0;display:${_selOv>=0?'flex':'none'};gap:7px;align-items:center;justify-content:center;flex-wrap:wrap;padding:0 10px;z-index:5">
+     ${['#ffffff','#000000','#ffd166','#ff6f8b','#1fae7e','#3b9dff'].map(c=>`<button onclick="ovColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid #fff;cursor:pointer"></button>`).join('')}
+     <button onclick="ovSize(-3)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A−</button>
+     <button onclick="ovSize(3)" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">A＋</button>
+     <button onclick="ovEditText()" style="background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">✏️</button>
+     <button onclick="ovDelete()" style="background:rgba(255,111,139,.9);color:#fff;border:none;border-radius:10px;padding:6px 10px;font-weight:800">🗑</button>
+   </div>
    <div class="ed-bottom">
-     <div class="sub" style="color:#9aa">${st.music?('🎵 '+(st.music.name||st.music.preset)):'Nessuna musica'}${st.voiceover?' · 🎙️ doppiaggio':''}${st.overlays.length?' · ✍️ '+st.overlays.length+' scritte':''}</div>
+     <div class="sub" style="color:#9aa">${st.music?('🎵 '+(st.music.name||st.music.preset||'traccia')):'Nessuna musica'}${st.voiceover?' · 🎙️ doppiaggio':''}${st.overlays.length?' · ✍️ '+st.overlays.length+' scritte (trascina per spostare)':''}</div>
      <input id="ed-cap" placeholder="Aggiungi una descrizione..." value="${(st.caption||'').replace(/"/g,'&quot;')}">
      <button class="btn" onclick="publishEdited()">Pubblica</button>
    </div>`;
-  startBg();
+  wireEditorMedia(); startBg();
 }
-function addOverlay(){ const t=prompt('Testo da scrivere sul video:'); if(!t||!t.trim())return; _editState.overlays.push({text:t.trim(),top:'45%',color:'#fff',size:24}); renderEditor(); toast('Tocca la scritta per spostarla o modificarla'); }
-function editOverlay(i){ const o=_editState.overlays[i]; if(!o)return; const t=prompt('Modifica testo (lascia vuoto per eliminare):',o.text); if(t===null)return; if(!t.trim()){_editState.overlays.splice(i,1);renderEditor();return;} o.text=t.trim(); const pos=['12%','45%','78%']; o.top=pos[(pos.indexOf(o.top)+1)%3]; const cols=['#fff','#ffd166','#ff6f8b','#1fae7e']; o.color=cols[(cols.indexOf(o.color)+1)%4]; renderEditor(); toast('Posizione e colore aggiornati'); }
+function addOverlay(){ const t=prompt('Testo da scrivere sul video:'); if(!t||!t.trim())return; _editState.overlays.push({text:t.trim(),x:50,y:40,color:'#fff',size:28}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la scritta dove vuoi · usa la barra per colore e dimensione'); }
+function ovDown(ev,i){ ev.preventDefault(); ev.stopPropagation(); _selOv=i; _ovDrag={i,moved:false,px:ev.clientX,py:ev.clientY}; try{ev.currentTarget.setPointerCapture(ev.pointerId);}catch(e){}
+  document.querySelectorAll('.ed-ov').forEach(el=>el.style.outline=''); const cur=document.querySelector('[data-oi="'+i+'"]'); if(cur)cur.style.outline='1.5px dashed rgba(255,255,255,.75)';
+  const bar=document.getElementById('ed-ovbar'); if(bar)bar.style.display='flex'; }
+function ovMove(ev){ if(!_ovDrag)return; const st=document.getElementById('ed-stage'); if(!st)return; const r=st.getBoundingClientRect();
+  let x=(ev.clientX-r.left)/r.width*100, y=(ev.clientY-r.top)/r.height*100; x=Math.max(6,Math.min(94,x)); y=Math.max(8,Math.min(92,y));
+  const o=_editState.overlays[_ovDrag.i]; if(o){o.x=Math.round(x);o.y=Math.round(y);} const el=document.querySelector('[data-oi="'+_ovDrag.i+'"]'); if(el){el.style.left=x+'%';el.style.top=y+'%';}
+  if(Math.abs(ev.clientX-_ovDrag.px)>4||Math.abs(ev.clientY-_ovDrag.py)>4)_ovDrag.moved=true; }
+function ovUp(ev){ if(_ovDrag){_ovDrag=null;} }
+function selOvEl(){ return document.querySelector('[data-oi="'+_selOv+'"]'); }
+function ovColor(c){ const o=_editState.overlays[_selOv]; if(!o)return; o.color=c; const el=selOvEl(); if(el)el.style.color=c; }
+function ovSize(d){ const o=_editState.overlays[_selOv]; if(!o)return; o.size=Math.max(14,Math.min(60,(o.size||26)+d)); const el=selOvEl(); if(el)el.style.fontSize=o.size+'px'; }
+function ovEditText(){ const o=_editState.overlays[_selOv]; if(!o)return; const t=prompt('Modifica testo:',o.text); if(t===null)return; if(!t.trim()){ovDelete();return;} o.text=t.trim(); const el=selOvEl(); if(el)el.textContent=o.text; }
+function ovDelete(){ if(_selOv<0)return; _editState.overlays.splice(_selOv,1); _selOv=-1; renderEditor(); }
 function toggleMute(){ _editState.muteOriginal=!_editState.muteOriginal; renderEditor(); }
-function pickMusic(){
-  const c=prompt('Musica: 1=Chill · 2=Upbeat · 3=Lo-fi · 0=carica un tuo audio (vuoto=togli)','1');
-  if(c===null)return;
-  if(c===''){ _editState.music=null; renderEditor(); return; }
-  if(c==='0'){ fileFallback((url,file)=>{ _editState.music={src:url,name:(file&&file.name)||'audio'}; renderEditor(); toast('Musica aggiunta'); },'audio/*'); return; }
-  _editState.music={preset:({'1':'Chill','2':'Upbeat','3':'Lo-fi'}[c]||'Chill')}; renderEditor(); toast('Musica: '+_editState.music.preset);
+function wireEditorMedia(){ const v=document.getElementById('ed-video'); if(!v)return; const auds=[document.getElementById('ed-music'),document.getElementById('ed-voice')].filter(Boolean);
+  v.onplay=()=>auds.forEach(a=>{try{a.currentTime=0;a.play().catch(()=>{});}catch(e){}});
+  v.onpause=()=>auds.forEach(a=>{try{a.pause();}catch(e){}});
+  setTimeout(()=>{ try{ if(v&&!v.paused) auds.forEach(a=>a.play().catch(()=>{})); }catch(e){} },250); }
+/* pannello musica (collegabile ad app) */
+function openMusicPanel(){
+  const box=document.createElement('div'); box.id='music-panel'; box.style.cssText='position:absolute;inset:0;z-index:7;background:rgba(0,0,0,.55);display:flex;align-items:flex-end';
+  box.innerHTML=`<div style="background:#141414;color:#fff;width:100%;border-radius:22px 22px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0))">
+    <div class="grab" style="background:#444"></div>
+    <h3 style="margin:0 0 12px;text-align:center;font-size:16px">🎵 Aggiungi musica</h3>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Chill')">🎧 Base Chill</button>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Upbeat')">⚡ Base Upbeat</button>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="setMusicPreset('Lo-fi')">🌙 Base Lo-fi</button>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="uploadMusic()">📁 Carica un audio dal telefono</button>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="linkMusic()">🔗 Da app musicale (Spotify, Apple Music, YouTube)</button>
+    <button class="btn sm sec" style="margin-bottom:8px" onclick="_editState.music=null;closeMusicPanel();renderEditor()">🚫 Nessuna musica</button>
+    <button class="btn" onclick="closeMusicPanel()">Chiudi</button>
+  </div>`;
+  box.onclick=(ev)=>{ if(ev.target===box)closeMusicPanel(); };
+  document.getElementById('editor').appendChild(box);
 }
+function closeMusicPanel(){ const b=document.getElementById('music-panel'); if(b)b.remove(); }
+function setMusicPreset(name){ _editState.music={preset:name}; closeMusicPanel(); renderEditor(); toast('Musica: '+name); }
+function uploadMusic(){ fileFallback((url,file)=>{ _editState.music={src:url,name:(file&&file.name)||'audio'}; closeMusicPanel(); renderEditor(); toast('Musica aggiunta'); },'audio/*'); }
+function linkMusic(){ const l=prompt('Incolla il link del brano (Spotify, Apple Music, YouTube…):'); if(!l||!l.trim())return; let name='Traccia'; if(/spotify/i.test(l))name='Spotify'; else if(/apple|music\.apple/i.test(l))name='Apple Music'; else if(/youtu/i.test(l))name='YouTube'; _editState.music={link:l.trim(),name:name}; closeMusicPanel(); renderEditor(); toast('Brano collegato da '+name); }
 async function toggleVoice(){
   if(_voiceRec&&_voiceRec.state==='recording'){ _voiceRec.stop(); return; }
   if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Registrazione audio non supportata'); return; }
@@ -2328,20 +2382,30 @@ async function publishEdited(){
   DRAFTS=DRAFTS.filter(d=>d.id!==_editState.id);
   closeEditor(); go('community'); comTab('perte'); toast('Short pubblicato! 🎬');
 }
+function ovStyle(o){ const x=o.x!=null?o.x:50, y=o.y!=null?o.y:(o.top?parseFloat(o.top):45); return `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);color:${o.color||'#fff'};font-weight:800;font-size:${o.size||26}px;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;max-width:88%`; }
 function myShortCard(s){
   return `<div class="short" data-my="${s.id}">
     <video src="${s.src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" playsinline loop ${s.muteOriginal?'muted':''} controls preload="metadata"></video>
-    ${(s.overlays||[]).map(o=>`<div style="position:absolute;left:50%;top:${o.top};transform:translateX(-50%);color:${o.color||'#fff'};font-weight:800;font-size:${o.size||24}px;text-shadow:0 2px 10px rgba(0,0,0,.8);text-align:center;max-width:88%">${o.text}</div>`).join('')}
+    ${(s.overlays||[]).map(o=>`<div style="${ovStyle(o)}">${(o.text||'').replace(/</g,'&lt;')}</div>`).join('')}
+    ${s.music&&s.music.src?`<audio src="${s.music.src}" loop></audio>`:''}
     ${s.voiceover?`<audio src="${s.voiceover}" loop></audio>`:''}
     <div class="grad"></div>
-    <div class="badge">🎬 Tuo${s.music?' · 🎵 '+(s.music.name||s.music.preset):''}</div>
+    <div class="badge">🎬 Tuo${s.music?' · 🎵 '+(s.music.name||s.music.preset||'traccia'):''}</div>
     <div class="rail">
       <button onclick="toast('❤️')"><span>🤍</span><span class="cnt">${fmt(s.likes||0)}</span></button>
       <button onclick="toast('Commenti')"><span>💬</span><span class="cnt">0</span></button>
+      <button onclick="deleteMyShort('${s.id}')"><span>🗑</span><span class="cnt">Elimina</span></button>
     </div>
     <div class="info"><div class="uname">@${s.user}</div><div class="cap">${(s.caption||'').replace(/</g,'&lt;')}</div></div>
   </div>`;
 }
+function deleteMyShort(id){ if(!confirm('Eliminare questo video?'))return; MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); }
+async function cloudDeletePost(id){ if(!cloudOn())return; try{ await SB.from('posts').delete().eq('id',id); }catch(e){} }
+async function deletePost(id){ if(!confirm('Eliminare questo video?'))return; await cloudDeletePost(id); renderComBody('perte'); toast('Video eliminato'); }
+function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; if(!v||!auds.length)return;
+  v.addEventListener('play',()=>auds.forEach(a=>{try{a.currentTime=v.currentTime||0;a.play().catch(()=>{});}catch(e){}}));
+  v.addEventListener('pause',()=>auds.forEach(a=>{try{a.pause();}catch(e){}}));
+  v.addEventListener('seeked',()=>auds.forEach(a=>{try{a.currentTime=v.currentTime;}catch(e){}})); }); }
 function draftCard(d){
   return `<div class="card">
     <div style="display:flex;gap:12px">
@@ -2993,11 +3057,20 @@ function authTab(mode,btn){
   } else {
     f.innerHTML=`<div class="field"><label>Nome</label><input id="aw-name" placeholder="Il tuo nome"></div>
       <div class="field"><label>Email</label><input id="aw-email" type="email" placeholder="tuamail@esempio.com"></div>
-      <div class="field"><label>Password</label><input id="aw-pass" type="password" placeholder="min 6 caratteri"></div>
-      <button class="btn" onclick="authRegister()">Registrati</button>
+      <div class="field"><label>Password</label><input id="aw-pass" type="password" placeholder="password sicura" oninput="pwCheck(this.value)"></div>
+      <div id="pw-crit" class="tiny" style="text-align:left;line-height:1.7">
+        <div id="pw-len">⚪ almeno 8 caratteri</div>
+        <div id="pw-up">⚪ una lettera maiuscola</div>
+        <div id="pw-low">⚪ una lettera minuscola</div>
+        <div id="pw-num">⚪ un numero</div>
+      </div>
+      <button class="btn" style="margin-top:8px" onclick="authRegister()">Registrati</button>
       <div class="tiny" style="margin-top:10px">Ti invieremo un'email di verifica: confermala, poi torna qui e accedi.</div>`;
   }
 }
+function pwRules(p){ return {len:(p||'').length>=8, up:/[A-Z]/.test(p||''), low:/[a-z]/.test(p||''), num:/[0-9]/.test(p||'')}; }
+function pwCheck(p){ const r=pwRules(p); const set=(id,ok)=>{const e=document.getElementById(id);if(e)e.innerHTML=(ok?'🟢':'⚪')+e.textContent.slice(1);}; set('pw-len',r.len);set('pw-up',r.up);set('pw-low',r.low);set('pw-num',r.num); }
+function pwOk(p){ const r=pwRules(p); return r.len&&r.up&&r.low&&r.num; }
 async function authLogin(){
   if(!cloudOn()){toast('Attiva prima il cloud in Menu → Cloud');return;}
   const e=(document.getElementById('aw-email').value||'').trim(), p=document.getElementById('aw-pass').value||'';
@@ -3010,7 +3083,8 @@ async function authRegister(){
   if(!cloudOn()){toast('Attiva prima il cloud in Menu → Cloud');return;}
   const n=(document.getElementById('aw-name').value||'').trim();
   const e=(document.getElementById('aw-email').value||'').trim(), p=document.getElementById('aw-pass').value||'';
-  if(!e||p.length<6){toast('Email valida e password di almeno 6 caratteri');return;}
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){toast('Inserisci un\'email valida');return;}
+  if(!pwOk(p)){toast('Password non sicura: 8+ caratteri, maiuscola, minuscola e numero');return;}
   toast('Creazione account…');
   try{ await cloudSignUp(e,p); if(n)S.user.name=n;
     document.getElementById('auth-forms').innerHTML=`<div class="alert ok" style="margin:0"><span>📧</span><div><b>Email di verifica inviata a ${e}.</b> Apri la mail, premi il link di conferma, poi torna qui e tocca "Accedi".</div></div><button class="btn" style="margin-top:14px" onclick="authTab('login')">Vai al login</button>`;
