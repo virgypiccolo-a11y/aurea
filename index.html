@@ -250,6 +250,30 @@ body{
 .divider{height:1px;background:var(--line);margin:14px 0}
 .tiny{font-size:11px;color:var(--muted);text-align:center;margin-top:6px}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+
+/* full screen su telefono: niente cornice, niente finto status bar */
+@media (max-width:520px){
+  body{padding:0;background:var(--bg);align-items:stretch}
+  .phone{max-width:100%;width:100%;height:100vh;height:100dvh;max-height:none;border-radius:0;box-shadow:none}
+  .statusbar{display:none}
+  .viewport{padding-top:env(safe-area-inset-top,0px)}
+  .nav{height:calc(78px + env(safe-area-inset-bottom,0px));padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+  .cam-ov{border-radius:0}
+}
+@media (display-mode:standalone){
+  .statusbar{display:none}
+  .viewport{padding-top:env(safe-area-inset-top,0px)}
+}
+
+/* onboarding */
+.onb{position:absolute;inset:0;z-index:130;background:linear-gradient(160deg,#eaf6f0,#f6eff4);display:flex;flex-direction:column;overflow-y:auto;padding:0}
+.onb-inner{margin:auto;width:100%;max-width:400px;padding:34px 26px calc(34px + env(safe-area-inset-bottom,0px));padding-top:calc(40px + env(safe-area-inset-top,0px))}
+.onb-logo{width:84px;height:84px;border-radius:26px;overflow:hidden;margin:0 auto 18px;box-shadow:var(--shadow);background:#fff}
+.onb-logo img{width:100%;height:100%;object-fit:cover}
+.onb h2{font-size:24px;font-weight:800;text-align:center;margin:0 0 6px}
+.onb p{font-size:13.5px;color:var(--muted);text-align:center;margin:0 0 22px;line-height:1.5}
+.onb .field label{font-size:12.5px}
+.onb .seg{margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -263,6 +287,34 @@ body{
 
   <div class="viewport" id="viewport">
     <!-- screens injected -->
+  </div>
+
+  <div class="onb" id="onboard" style="display:none">
+    <div class="onb-inner">
+      <div class="onb-logo"><img src="icon-192.png" alt="Auréa"></div>
+      <h2>Ti diamo il benvenuto in Auréa</h2>
+      <p>Creiamo il tuo profilo. Bastano pochi secondi e l'app sarà tutta tua.</p>
+      <div class="field"><label>Come ti chiami?</label><input id="onb-name" placeholder="Il tuo nome"></div>
+      <div class="field"><label>Sesso</label>
+        <div class="seg" id="onb-sex">
+          <button class="on" onclick="onbSex('F',this)">Donna</button>
+          <button onclick="onbSex('M',this)">Uomo</button>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Peso attuale (kg)</label><input id="onb-wnow" type="number" inputmode="decimal" placeholder="es. 65"></div>
+        <div class="field"><label>Peso obiettivo (kg)</label><input id="onb-wgoal" type="number" inputmode="decimal" placeholder="es. 60"></div>
+      </div>
+      <div class="field"><label>Obiettivo</label>
+        <div class="seg" id="onb-goal">
+          <button class="on" onclick="onbGoal('Dimagrimento',this)">Dimagrire</button>
+          <button onclick="onbGoal('Mantenimento',this)">Mantenere</button>
+          <button onclick="onbGoal('Massa',this)">Massa</button>
+        </div>
+      </div>
+      <button class="btn" style="margin-top:8px" onclick="finishOnboard()">Inizia con Auréa</button>
+      <button class="btn sec sm" style="margin-top:10px" onclick="skipOnboard()">Esplora la demo</button>
+    </div>
   </div>
 
   <div class="nav" id="nav"></div>
@@ -308,8 +360,10 @@ const S = {
   journal:[
     {d:"Ieri",mood:"🙂",txt:"Giornata piena ma sono riuscita ad allenarmi. Fiera di me."}
   ],
-  aiKey:"", aiModel:"claude-3-5-sonnet-latest"
+  aiKey:"", aiModel:"claude-3-5-sonnet-latest",
+  setup:false
 };
+let onbData={sex:"F",goal:"Dimagrimento"};
 
 /* ============ WEIGHT & PLAN ENGINE ============ */
 function weightPlan(){
@@ -359,6 +413,27 @@ function restore(){ try{
   return true;
 }catch(e){ return false; } }
 function resetData(){ try{ localStorage.removeItem('aurea_data'); }catch(e){} location.reload(); }
+
+/* ============ ONBOARDING / PROFILO ============ */
+function onbSex(v,btn){onbData.sex=v;document.querySelectorAll('#onb-sex button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function onbGoal(v,btn){onbData.goal=v;document.querySelectorAll('#onb-goal button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function showOnboard(){const el=document.getElementById('onboard');if(el)el.style.display='flex';}
+function hideOnboard(){const el=document.getElementById('onboard');if(el)el.style.display='none';}
+function rebuildAll(){Object.keys(BUILDERS).forEach(id=>{const e=document.getElementById('sc-'+id);if(e&&BUILDERS[id]){e.innerHTML=BUILDERS[id]();}});Object.keys(BUILDERS).forEach(afterRender);}
+function finishOnboard(){
+  const name=(document.getElementById('onb-name').value||'').trim();
+  if(name){S.user.name=name;S.user.initials=name.trim()[0].toUpperCase();}
+  S.user.sex=onbData.sex; S.user.goal=onbData.goal;
+  const wn=parseFloat((document.getElementById('onb-wnow').value||'').replace(',','.'));
+  const wg=parseFloat((document.getElementById('onb-wgoal').value||'').replace(',','.'));
+  if(!isNaN(wn)&&wn>25&&wn<300){S.wNow=+wn.toFixed(1);S.wStart=+wn.toFixed(1);S.weight=S.wNow;}
+  if(!isNaN(wg)&&wg>25&&wg<300){S.wGoal=+wg.toFixed(1);}
+  S.setup=true; save();
+  rebuildAll(); hideOnboard(); go('home');
+  toast('Profilo creato · ciao '+(S.user.name)+'! 🌿');
+}
+function skipOnboard(){S.setup=true;save();hideOnboard();go('home');}
+function logout(){S.setup=false;save();document.getElementById('onb-name').value='';showOnboard();}
 
 /* ============ FOTOCAMERA reale ============ */
 function capturePhoto(cb,hint){
@@ -492,7 +567,7 @@ function homeHTML(){
     <button class="qa" onclick="go('allenamento')"><span class="qi" style="background:#fff0e0">🏋️</span>Workout</button>
   </div>
   <div class="quick" style="margin-bottom:8px">
-    <button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s)">🌸</span>Ciclo</button>
+    ${S.user.sex==='F'?`<button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s)">🌸</span>Ciclo</button>`:`<button class="qa" onclick="go('allenamento')"><span class="qi" style="background:var(--coral-s)">💪</span>Forma</button>`}
     <button class="qa" onclick="go('prenota')"><span class="qi" style="background:#e8f1ff">🩺</span>Prenota</button>
     <button class="qa" onclick="go('shop')"><span class="qi" style="background:var(--mint)">💊</span>Integr.</button>
     <button class="qa" onclick="go('promemoria')"><span class="qi" style="background:#fff0e0">⏰</span>Promem.</button>
@@ -513,11 +588,11 @@ function homeHTML(){
   <div class="section-title">Prossimi appuntamenti <span class="more" onclick="go('prenota')">Vedi tutti</span></div>
   <div class="card tight" id="home-appts"></div>
 
-  <div class="banner gp" onclick="go('ciclo')" style="margin-top:16px;cursor:pointer">
+  ${S.user.sex==='F'?`<div class="banner gp" onclick="go('ciclo')" style="margin-top:16px;cursor:pointer">
     <span class="b-ic">🌸</span>
     <h4>Fase follicolare · giorno 9</h4>
     <p>Energia in aumento. Buon momento per allenamenti intensi e cibi ricchi di ferro. Tocca per i dettagli.</p>
-  </div>
+  </div>`:''}
 
   <div class="section-title">Il tuo oggi <span class="more" onclick="go('planning')">Planning →</span></div>
   <div class="card tight">
@@ -935,7 +1010,7 @@ function coachHTML(){
   </div>
 
   <div class="chat" id="chat">
-    <div class="msg ai">Ciao Sara! Sono il tuo coach. Ho visto che sei in fase follicolare e ti mancano 610 kcal oggi. Come posso aiutarti? 🌱</div>
+    <div class="msg ai">Ciao ${S.user.name}! Sono il tuo coach. Come posso aiutarti oggi? 🌱</div>
   </div>
 
   <div class="chatbar">
@@ -1025,8 +1100,8 @@ function profiloHTML(){
 
   <div class="card" style="text-align:center">
     <div class="avatar" style="width:80px;height:80px;border-radius:26px;font-size:32px;margin:0 auto 12px">${S.user.initials}</div>
-    <div style="font-size:20px;font-weight:800">${S.user.name} Rossi</div>
-    <div class="sub">Obiettivo: ${S.user.goal} · ${S.weight} kg</div>
+    <div style="font-size:20px;font-weight:800">${S.user.name}</div>
+    <div class="sub">Obiettivo: ${S.user.goal} · ${S.wNow} kg</div>
     <div class="grid3" style="margin-top:16px">
       <div><div style="font-size:20px;font-weight:800">28</div><div class="l" style="font-size:11px;color:var(--muted)">Giorni attiva</div></div>
       <div><div style="font-size:20px;font-weight:800">-2.1</div><div class="l" style="font-size:11px;color:var(--muted)">kg mese</div></div>
@@ -1066,7 +1141,7 @@ function profiloHTML(){
     <div class="row" onclick="if(confirm('Azzerare tutti i dati salvati?'))resetData()" style="cursor:pointer"><div class="ri" style="background:var(--coral-s)">🗑️</div><div class="rt"><b style="color:#d63a5c">Azzera dati e ricomincia</b></div><div class="rv">›</div></div>
   </div>
 
-  <button class="btn sec" onclick="toast('A presto, Sara!')">Esci</button>
+  <button class="btn sec" onclick="logout()">Esci / cambia profilo</button>
   <div class="tiny">Auréa · v1.0 · Il benessere che si prende cura di te</div>
   `;
 }
@@ -1552,8 +1627,9 @@ function boot(){
   Object.keys(BUILDERS).forEach(afterRender);
   go('home');
   save();
+  if(!S.setup) showOnboard();
   // clock
-  function tick(){const d=new Date();document.getElementById('clock').textContent=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');}
+  function tick(){const el=document.getElementById('clock');if(el)el.textContent=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');}
   tick();setInterval(tick,30000);
 }
 boot();
