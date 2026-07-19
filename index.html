@@ -12,6 +12,8 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <title>Auréa · Benessere & Estetica</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#f4f7f5;
@@ -296,6 +298,28 @@ body{
 .step .sn{width:30px;height:30px;flex:0 0 30px;border-radius:10px;background:var(--mint);color:var(--green-d);display:flex;align-items:center;justify-content:center;font-size:16px}
 .step .st{flex:1;font-size:13.5px;line-height:1.5}
 .step .st b{font-weight:800}
+
+/* shorts feed (social) */
+.shorts-feed{height:calc(100dvh - 205px);min-height:420px;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;border-radius:20px}
+.shorts-feed::-webkit-scrollbar{width:0}
+.short{height:100%;scroll-snap-align:start;position:relative;overflow:hidden;border-radius:20px;display:flex;flex-direction:column;justify-content:flex-end;color:#fff;margin-bottom:10px}
+.short .poster{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:130px;filter:drop-shadow(0 6px 20px rgba(0,0,0,.3))}
+.short .grad{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.12) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%)}
+.short .info{position:relative;z-index:2;padding:16px 78px 20px 16px}
+.short .info .cap{font-size:13.5px;line-height:1.45;margin:6px 0 8px;text-shadow:0 1px 6px rgba(0,0,0,.4)}
+.short .uname{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px}
+.short .rail{position:absolute;right:12px;bottom:24px;display:flex;flex-direction:column;gap:16px;align-items:center;z-index:3}
+.short .rail button{background:none;border:none;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:26px;line-height:1;text-shadow:0 1px 6px rgba(0,0,0,.4)}
+.short .rail .cnt{font-size:11px;font-weight:700}
+.short .rail .ravatar{width:44px;height:44px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;position:relative}
+.short .rail .plus{position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:20px;height:20px;border-radius:50%;background:var(--coral);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+.chip.w{background:rgba(255,255,255,.22);color:#fff}
+.foll-btn{border:1.5px solid #fff;background:transparent;color:#fff;border-radius:20px;padding:5px 14px;font-weight:800;font-size:12px;cursor:pointer}
+.foll-btn.ing{background:#fff;color:#12211b;border-color:#fff}
+.short .badge{position:absolute;top:14px;left:14px;background:rgba(0,0,0,.42);backdrop-filter:blur(6px);padding:6px 11px;border-radius:20px;font-size:11px;font-weight:800;z-index:3}
+.short .badge.viral{background:linear-gradient(90deg,#ff6f8b,#ff9a7a)}
+.short .badge.foryou{background:rgba(31,174,126,.92);top:52px;left:14px}
+.compose-btn{position:absolute;top:0;right:0;background:var(--green);color:#fff;border:none;border-radius:14px;padding:9px 14px;font-weight:800;font-size:13px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -324,6 +348,10 @@ body{
         </div>
       </div>
       <div class="grid2">
+        <div class="field"><label>Età</label><input id="onb-age" type="number" inputmode="numeric" placeholder="es. 30"></div>
+        <div class="field"><label>Altezza (cm)</label><input id="onb-height" type="number" inputmode="numeric" placeholder="es. 168"></div>
+      </div>
+      <div class="grid2">
         <div class="field"><label>Peso attuale (kg)</label><input id="onb-wnow" type="number" inputmode="decimal" placeholder="es. 65"></div>
         <div class="field"><label>Peso obiettivo (kg)</label><input id="onb-wgoal" type="number" inputmode="decimal" placeholder="es. 60"></div>
       </div>
@@ -334,7 +362,21 @@ body{
           <button onclick="onbGoal('Massa',this)">Massa</button>
         </div>
       </div>
-      <button class="btn" style="margin-top:8px" onclick="finishOnboard()">Inizia con Auréa</button>
+
+      <div class="divider"></div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">🩺 <b>Storia clinica</b> — serve per generare una dieta davvero su misura. Resta solo sul tuo dispositivo.</p>
+      <div class="field"><label>Hai il diabete?</label>
+        <div class="seg" id="onb-diab">
+          <button class="on" onclick="onbSet('diabete','No',this,'onb-diab')">No</button>
+          <button onclick="onbSet('diabete','Tipo 1',this,'onb-diab')">Tipo 1</button>
+          <button onclick="onbSet('diabete','Tipo 2',this,'onb-diab')">Tipo 2</button>
+        </div>
+      </div>
+      <div class="field"><label>Intolleranze / allergie (separa con virgola)</label><input id="onb-intol" placeholder="es. lattosio, glutine"></div>
+      <div class="field"><label>Interventi o patologie (facoltativo)</label><input id="onb-cond" placeholder="es. celiachia, tiroide, colecisti"></div>
+      <div id="onb-grav-wrap" class="field"><div class="tog" style="padding:6px 0"><div class="tt"><b>Gravidanza / allattamento</b></div><div class="switch" id="onb-grav" onclick="this.classList.toggle('on')"><i></i></div></div></div>
+
+      <button class="btn" style="margin-top:8px" onclick="finishOnboard()">Genera la mia dieta personalizzata</button>
       <button class="btn sec sm" style="margin-top:10px" onclick="skipOnboard()">Esplora la demo</button>
     </div>
   </div>
@@ -354,14 +396,15 @@ body{
 <script>
 /* ============ STATE ============ */
 const S = {
-  user:{name:"Sara", initials:"S", sex:"F", goal:"Dimagrimento", kcalGoal:1850},
-  intake:{kcal:1240, prot:78, carb:132, fat:44},
-  steps:7420, stepsGoal:10000,
-  water:5, waterGoal:8,
+  user:{name:"Sara", initials:"S", sex:"F", goal:"Dimagrimento", kcalGoal:1850, age:null, height:null},
+  intake:{kcal:0, prot:0, carb:0, fat:0},
+  foodLog:[],
+  steps:0, stepsGoal:10000,
+  water:0, waterGoal:8,
   sleep:7.2,
   weight:64.5,
   wStart:69.0, wNow:64.5, wGoal:60.0, wWeeks:12,
-  disliked:["Peperoni","Frutti di mare","Fegato"],
+  disliked:[],
   planChoices:{},
   cart:[],
   reminders:[
@@ -395,9 +438,12 @@ const S = {
   diet:"Onnivora", mealOffset:{}, events:{},
   detox:null,
   fasting:null,
+  following:[],
+  pro:null,
+  docReviews:{},
   health:{interventi:"",diabete:"No",intolleranze:[],patologie:[],farmaci:"",gravidanza:false,note:""}
 };
-let onbData={sex:"F",goal:"Dimagrimento"};
+let onbData={sex:"F",goal:"Dimagrimento",diabete:"No"};
 
 /* ============ WEIGHT & PLAN ENGINE ============ */
 function weightPlan(){
@@ -406,7 +452,12 @@ function weightPlan(){
   const total  = +(S.wStart - S.wGoal).toFixed(1);      // percorso totale
   const progress = total!==0 ? Math.max(0,Math.min(1, done/total)) : 1;
   const weeklyKg = +(toLose / Math.max(1,S.wWeeks)).toFixed(2); // ritmo settimanale
-  const maintenance = 2050;                             // TDEE stimato
+  // TDEE reale se abbiamo età e altezza (Mifflin-St Jeor)
+  let maintenance = 2050;
+  if(S.user.age && S.user.height){
+    const bmr = 10*S.wNow + 6.25*S.user.height - 5*S.user.age + (S.user.sex==='M'?5:-161);
+    maintenance = Math.round(bmr*1.45);
+  }
   let dailyDelta = Math.round(weeklyKg*7700/7);         // deficit/surplus giornaliero
   dailyDelta = Math.max(-700, Math.min(700, dailyDelta));// cap sano
   let kcal = maintenance - dailyDelta;
@@ -427,10 +478,15 @@ function ring(pct,color,size=120,sw=13){
       stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/></svg>`;
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
+let curScreen=null;
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento'];
 function go(id){
+  const changing = curScreen!==id;
+  if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const el=document.getElementById('sc-'+id); if(el){el.classList.add('active');}
-  document.getElementById('viewport').scrollTop=0;
+  if(changing) document.getElementById('viewport').scrollTop=0;
+  curScreen=id;
   const navIds=NAV.map(n=>n.id);
   const inNav=navIds.includes(id);
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.t===id || (!inNav && b.dataset.t==='menu')));
@@ -440,7 +496,9 @@ function go(id){
 function cartCount(){return S.cart.reduce((a,b)=>a+b.q,0);}
 
 /* ============ PERSISTENZA (salvataggio reale) ============ */
-function save(){ try{ localStorage.setItem('aurea_data', JSON.stringify({S:S, POSTS:POSTS})); }catch(e){} }
+let _cloudTimer=null;
+function save(){ try{ localStorage.setItem('aurea_data', JSON.stringify({S:S, POSTS:POSTS})); }catch(e){}
+  if(cloudOn()&&cloudUser){ clearTimeout(_cloudTimer); _cloudTimer=setTimeout(cloudSaveProfile,1500); } }
 function restore(){ try{
   const r=localStorage.getItem('aurea_data'); if(!r) return false;
   const o=JSON.parse(r);
@@ -450,9 +508,67 @@ function restore(){ try{
 }catch(e){ return false; } }
 function resetData(){ try{ localStorage.removeItem('aurea_data'); }catch(e){} location.reload(); }
 
+/* ============ CLOUD (Supabase) — modalità reale ============ */
+let SB=null, cloudUser=null;
+function cloudCfg(){ try{return JSON.parse(localStorage.getItem('aurea_cloud')||'null');}catch(e){return null;} }
+function cloudInit(){
+  const c=cloudCfg();
+  if(c&&c.url&&c.key&&window.supabase){ try{ SB=window.supabase.createClient(c.url,c.key); return true; }catch(e){ SB=null; } }
+  return false;
+}
+function cloudOn(){ return !!SB; }
+function loggedIn(){ return !!cloudUser; }
+async function cloudCheckSession(){ if(!cloudOn())return null; try{ const {data}=await SB.auth.getSession(); cloudUser=data&&data.session?data.session.user:null; if(cloudUser) await cloudLoadProfile(); }catch(e){} return cloudUser; }
+async function cloudSignUp(email,pass){
+  const {data,error}=await SB.auth.signUp({email,password:pass}); if(error) throw error;
+  cloudUser=data.user; return data;
+}
+async function cloudSignIn(email,pass){
+  const {data,error}=await SB.auth.signInWithPassword({email,password:pass}); if(error) throw error;
+  cloudUser=data.user; await cloudLoadProfile(); return data;
+}
+async function cloudSignOut(){ try{ await SB.auth.signOut(); }catch(e){} cloudUser=null; }
+function minState(){ const {foodLog,...rest}=S; return rest; }
+async function cloudSaveProfile(){
+  if(!cloudOn()||!cloudUser)return;
+  try{ await SB.from('profiles').upsert({
+    id:cloudUser.id, email:cloudUser.email, name:S.user.name, sex:S.user.sex, age:S.user.age, height:S.user.height,
+    wnow:S.wNow, wgoal:S.wGoal, goal:S.user.goal, diet:S.diet,
+    is_pro:!!S.pro, pro_status:S.pro?S.pro.status:null, profession:S.pro?S.pro.profession:null,
+    data:S, updated_at:new Date().toISOString()
+  }); }catch(e){}
+}
+async function cloudLoadProfile(){
+  if(!cloudOn()||!cloudUser)return;
+  try{ const {data,error}=await SB.from('profiles').select('data').eq('id',cloudUser.id).maybeSingle();
+    if(!error&&data&&data.data){ Object.keys(data.data).forEach(k=>{ if(k!=='foodLog') S[k]=data.data[k]; }); S.setup=true; }
+  }catch(e){}
+}
+async function cloudUploadVideo(file,meta){
+  if(!cloudOn()||!cloudUser) throw new Error('Accedi prima');
+  const safe=(file.name||'video.mp4').replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=cloudUser.id+'/'+Date.now()+'_'+safe;
+  const {error:upErr}=await SB.storage.from('videos').upload(path,file,{contentType:file.type||'video/mp4',upsert:false});
+  if(upErr) throw upErr;
+  const {data:pub}=SB.storage.from('videos').getPublicUrl(path);
+  const {error:insErr}=await SB.from('posts').insert({
+    user_id:cloudUser.id, author:(S.user.name||'utente'), caption:meta.cap, type:meta.type,
+    diet:S.diet, goal:S.user.goal, video_url:pub.publicUrl, likes:0
+  });
+  if(insErr) throw insErr;
+  return pub.publicUrl;
+}
+async function cloudFeed(){
+  if(!cloudOn())return [];
+  try{ const {data,error}=await SB.from('posts').select('*').order('created_at',{ascending:false}).limit(60); if(error)throw error; return data||[]; }
+  catch(e){ return []; }
+}
+async function cloudLikePost(id,cur){ if(!cloudOn())return; try{ await SB.from('posts').update({likes:(cur||0)+1}).eq('id',id); }catch(e){} }
+
 /* ============ ONBOARDING / PROFILO ============ */
-function onbSex(v,btn){onbData.sex=v;document.querySelectorAll('#onb-sex button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function onbSex(v,btn){onbData.sex=v;document.querySelectorAll('#onb-sex button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');const g=document.getElementById('onb-grav-wrap');if(g)g.style.display=v==='F'?'block':'none';}
 function onbGoal(v,btn){onbData.goal=v;document.querySelectorAll('#onb-goal button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function onbSet(k,v,btn,seg){onbData[k]=v;document.querySelectorAll('#'+seg+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 function showOnboard(){const el=document.getElementById('onboard');if(el)el.style.display='flex';}
 function hideOnboard(){const el=document.getElementById('onboard');if(el)el.style.display='none';}
 function rebuildAll(){Object.keys(BUILDERS).forEach(id=>{const e=document.getElementById('sc-'+id);if(e&&BUILDERS[id]){e.innerHTML=BUILDERS[id]();}});Object.keys(BUILDERS).forEach(afterRender);}
@@ -460,13 +576,25 @@ function finishOnboard(){
   const name=(document.getElementById('onb-name').value||'').trim();
   if(name){S.user.name=name;S.user.initials=name.trim()[0].toUpperCase();}
   S.user.sex=onbData.sex; S.user.goal=onbData.goal;
+  const age=parseInt(document.getElementById('onb-age').value); if(!isNaN(age)&&age>10&&age<100)S.user.age=age;
+  const he=parseInt(document.getElementById('onb-height').value); if(!isNaN(he)&&he>120&&he<230)S.user.height=he;
   const wn=parseFloat((document.getElementById('onb-wnow').value||'').replace(',','.'));
   const wg=parseFloat((document.getElementById('onb-wgoal').value||'').replace(',','.'));
   if(!isNaN(wn)&&wn>25&&wn<300){S.wNow=+wn.toFixed(1);S.wStart=+wn.toFixed(1);S.weight=S.wNow;}
   if(!isNaN(wg)&&wg>25&&wg<300){S.wGoal=+wg.toFixed(1);}
-  S.setup=true; save();
+  // storia clinica
+  S.health.diabete=onbData.diabete||'No';
+  const intol=(document.getElementById('onb-intol').value||'').split(',').map(x=>x.trim()).filter(Boolean);
+  S.health.intolleranze=intol;
+  const cond=(document.getElementById('onb-cond').value||'').trim(); if(cond)S.health.interventi=cond;
+  const gr=document.getElementById('onb-grav'); S.health.gravidanza=(S.user.sex==='F'&&gr&&gr.classList.contains('on'));
+  // intolleranze escluse dai pasti
+  intol.forEach(x=>{ if(!S.disliked.map(d=>d.toLowerCase()).includes(x.toLowerCase())) S.disliked.push(x); });
+  // calorie partono da zero
+  S.intake={kcal:0,prot:0,carb:0,fat:0}; S.foodLog=[]; S.water=0; S.planChoices={};
+  S.setup=true; weightPlan(); save();
   rebuildAll(); hideOnboard(); go('home');
-  toast('Profilo creato · ciao '+(S.user.name)+'! 🌿');
+  toast('Dieta personalizzata creata · ciao '+(S.user.name)+'! 🌿');
 }
 function skipOnboard(){S.setup=true;save();hideOnboard();go('home');}
 function logout(){S.setup=false;save();document.getElementById('onb-name').value='';showOnboard();}
@@ -564,7 +692,9 @@ const MENU=[
   {id:'prenota',ic:'🩺',l:'Prenota'},
   {id:'coach',ic:'🤖',l:'Coach AI'},
   {id:'allenamento',ic:'🏋️',l:'Workout'},
-  {id:'promemoria',ic:'⏰',l:'Promemoria'}
+  {id:'promemoria',ic:'⏰',l:'Promemoria'},
+  {id:'pro',ic:'🎓',l:'Professionisti'},
+  {id:'cloud',ic:'☁️',l:'Cloud'}
 ];
 function renderMenu(){
   const g=document.getElementById('menu-grid'); if(!g)return;
@@ -686,29 +816,28 @@ function renderHomeAppts(){
 }
 
 /* ---------- DIARIO ---------- */
-const MEALS=[
-  {n:"Colazione",ic:"🥐",items:[{f:"Yogurt greco + mirtilli",k:210},{f:"Fette avena e miele",k:180}],k:390,g:450},
-  {n:"Pranzo",ic:"🍲",items:[{f:"Pollo alla griglia",k:280},{f:"Riso venere + verdure",k:240}],k:520,g:600},
-  {n:"Spuntino",ic:"🍎",items:[{f:"Mela + mandorle",k:160}],k:160,g:200},
-  {n:"Cena",ic:"🐟",items:[],k:0,g:600}
-];
+const MEAL_CATS=[["Colazione","🥐"],["Pranzo","🍲"],["Spuntino","🍎"],["Cena","🐟"]];
 function diarioHTML(){
+  const log=S.foodLog||[];
   return `
   <button class="back" onclick="go('home')">← Indietro</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Oggi · ${S.intake.kcal} / ${S.user.kcalGoal} kcal</div><div class="n">Diario alimentare</div></div></div>
 
   <div class="grid2" style="margin-bottom:4px">
     <button class="btn sm" onclick="go('scanner')">📷 Scansiona pasto</button>
-    <button class="btn sm sec" onclick="addFood()">＋ Aggiungi cibo</button>
+    <button class="btn sm sec" onclick="addFood('Pasto')">＋ Aggiungi cibo</button>
   </div>
 
   <div style="margin-top:14px">
-  ${MEALS.map((m,i)=>`
-    <div class="card tight">
-      <div class="h" style="margin-bottom:8px">${m.ic} ${m.n}<span class="pill">${m.k}/${m.g} kcal</span></div>
-      ${m.items.map(it=>`<div class="row" style="padding:9px 0"><div class="rt"><b>${it.f}</b></div><div class="rv" style="font-size:13px">${it.k}<small>kcal</small></div></div>`).join('') || '<div class="sub">Niente registrato — tocca + per aggiungere.</div>'}
-      <button class="btn ghost sm" style="margin-top:10px" onclick="addFood('${m.n}')">＋ Aggiungi a ${m.n}</button>
-    </div>`).join('')}
+  ${MEAL_CATS.map(([name,ic])=>{
+    const items=log.filter(x=>x.meal===name);
+    const k=items.reduce((a,b)=>a+(b.k||0),0);
+    return `<div class="card tight">
+      <div class="h" style="margin-bottom:8px">${ic} ${name}<span class="pill">${k} kcal</span></div>
+      ${items.length?items.map((it,idx)=>`<div class="row" style="padding:9px 0"><div class="rt"><b>${it.f}</b></div><div class="rv" style="font-size:13px">${it.k}<small>kcal</small></div><button onclick="rmFood(${log.indexOf(it)})" style="background:none;border:none;color:var(--coral);font-size:16px;cursor:pointer;margin-left:8px">✕</button></div>`).join(''):'<div class="sub">Niente registrato — tocca + per aggiungere.</div>'}
+      <button class="btn ghost sm" style="margin-top:10px" onclick="addFood('${name}')">＋ Aggiungi a ${name}</button>
+    </div>`;
+  }).join('')}
   </div>
 
   <div class="card">
@@ -719,7 +848,7 @@ function diarioHTML(){
     <div class="sub" style="margin-top:8px">${S.water} di ${S.waterGoal} bicchieri · tocca per aggiornare</div>
   </div>`;
 }
-function setWater(n){S.water=n;rebuild('diario');rebuild('home');go('diario');toast('Idratazione aggiornata');}
+function setWater(n){S.water=(S.water===n?n-1:n);rebuild('diario');rebuild('home');toast('Idratazione aggiornata');}
 function editWeight(){
   const v=prompt('Peso di oggi (kg):', S.wNow);
   if(v===null)return;
@@ -730,7 +859,16 @@ function editWeight(){
   rebuild('home');rebuild('piano');go('home');
   toast('Peso aggiornato · piano ricalcolato: '+wp.kcal+' kcal');
 }
-function addFood(m){const meal=m||'pasto';const opts=["Salmone al forno (320 kcal)","Insalata di quinoa (260 kcal)","Frittata di albumi (190 kcal)"];const pick=opts[Math.floor((S.intake.kcal)%3)];S.intake.kcal+=190;S.intake.prot+=14;toast('Aggiunto: '+pick+' → '+meal);rebuild('home');rebuild('diario');go('diario');}
+function addFood(meal){
+  const f=prompt('Cosa hai mangiato?'); if(!f||!f.trim())return;
+  const kv=prompt('Quante calorie (kcal)? (lascia vuoto se non lo sai)','200');
+  const k=parseInt(kv); if(isNaN(k)){toast('Calorie non valide');return;}
+  S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto', f:f.trim(), k});
+  S.intake.kcal+=k;
+  save(); rebuild('diario'); rebuild('home'); toast('Aggiunto: '+f.trim()+' · '+k+' kcal');
+}
+function rmFood(i){ if(i<0||!S.foodLog||!S.foodLog[i])return; const it=S.foodLog[i]; S.intake.kcal=Math.max(0,S.intake.kcal-(it.k||0)); S.intake.prot=Math.max(0,S.intake.prot-(it.prot||0)); S.foodLog.splice(i,1); save(); rebuild('diario'); rebuild('home'); toast('Rimosso'); }
+function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); save(); }
 
 /* ---------- SCANNER ---------- */
 function scannerHTML(){
@@ -774,7 +912,7 @@ function renderMeal(r,photo,j,real){
       ${items.map(it=>`<div class="row"><div class="ri" style="background:var(--mint)">${it.emoji||'🍽️'}</div><div class="rt"><b>${it.food||it.name}</b><small>≈ ${it.grams||'?'} g</small></div><div class="rv">${it.kcal||0}<small>kcal</small></div></div>`).join('')}
       ${items.length?`<div class="divider"></div>
       <div class="row"><div class="rt"><b>Totale stimato</b><small>P ${tot.prot||0}g · C ${tot.carb||0}g · G ${tot.fat||0}g</small></div><div class="rv" style="color:var(--green-d)">${tot.kcal||0}<small>kcal</small></div></div>
-      <button class="btn" style="margin-top:12px" onclick="S.intake.kcal+=${tot.kcal||0};S.intake.prot+=${tot.prot||0};rebuild('home');rebuild('diario');toast('Pasto salvato nel diario');go('diario')">Salva nel diario</button>`:''}
+      <button class="btn" style="margin-top:12px" onclick="logMeal('${(items.map(it=>it.food||it.name).join(', ')||'Pasto').replace(/'/g,'')}',${tot.kcal||0},${tot.prot||0},'Pasto');rebuild('home');rebuild('diario');toast('Pasto salvato nel diario');go('diario')">Salva nel diario</button>`:''}
     </div>`;
 }
 
@@ -790,7 +928,13 @@ const FOODS={
     {t:"Toast integrale, ricotta e miele",k:320,p:16,c:44,f:8,diet:["v"],ing:["pane","ricotta","miele"]},
     {t:"Smoothie proteico banana e spinaci",k:300,p:26,c:34,f:5,diet:["v","vg"],ing:["banana","spinaci","proteine"]},
     {t:"Omelette albumi, pomodoro e feta",k:280,p:30,c:8,f:14,diet:["v","lc"],ing:["albumi","pomodoro","feta"]},
-    {t:"Porridge di quinoa, mela e cannella",k:350,p:12,c:56,f:8,diet:["v","vg"],ing:["quinoa","mela","cannella"]}
+    {t:"Porridge di quinoa, mela e cannella",k:350,p:12,c:56,f:8,diet:["v","vg"],ing:["quinoa","mela","cannella"]},
+    {t:"Budino di chia, cocco e mango",k:290,p:8,c:34,f:14,diet:["v","vg"],ing:["chia","cocco","mango"]},
+    {t:"Pane di segale, tacchino e uovo",k:340,p:28,c:26,f:12,diet:["lc"],ing:["segale","tacchino","uovo"]},
+    {t:"Fiocchi d'avena, latte e noci",k:360,p:16,c:44,f:12,diet:["v"],ing:["avena","latte","noci"]},
+    {t:"Ricotta, pere e noci",k:300,p:18,c:24,f:12,diet:["v","lc"],ing:["ricotta","pere","noci"]},
+    {t:"French toast integrale ai frutti rossi",k:340,p:18,c:42,f:8,diet:["v"],ing:["pane","uova","frutti rossi"]},
+    {t:"Frullato d'avena, cacao e banana",k:320,p:22,c:40,f:6,diet:["v","vg"],ing:["avena","cacao","banana"]}
   ],
   pranzo:[
     {t:"Pollo, quinoa e verdure grigliate",k:520,p:42,c:48,f:14,diet:[],ing:["pollo","quinoa","zucchine"]},
@@ -801,7 +945,13 @@ const FOODS={
     {t:"Tofu saltato, broccoli e riso venere",k:480,p:26,c:52,f:14,diet:["v","vg"],ing:["tofu","broccoli","riso"]},
     {t:"Petto di pollo, insalata e formaggio",k:430,p:44,c:10,f:22,diet:["lc"],ing:["pollo","insalata","formaggio"]},
     {t:"Pasta integrale al pesto e piselli",k:560,p:20,c:78,f:16,diet:["v"],ing:["pasta","pesto","piselli"]},
-    {t:"Bowl di lenticchie, patate e curcuma",k:500,p:24,c:70,f:10,diet:["v","vg"],ing:["lenticchie","patate","curcuma"]}
+    {t:"Bowl di lenticchie, patate e curcuma",k:500,p:24,c:70,f:10,diet:["v","vg"],ing:["lenticchie","patate","curcuma"]},
+    {t:"Orata al forno, patate e rosmarino",k:480,p:38,c:36,f:16,diet:[],ing:["orata","patate","rosmarino"]},
+    {t:"Cous cous di verdure e ceci",k:520,p:20,c:74,f:12,diet:["v","vg"],ing:["cous cous","verdure","ceci"]},
+    {t:"Bistecca magra, insalata e avocado",k:500,p:44,c:12,f:26,diet:["lc"],ing:["manzo","insalata","avocado"]},
+    {t:"Riso integrale, uova e verdure saltate",k:520,p:24,c:66,f:14,diet:["v"],ing:["riso","uova","verdure"]},
+    {t:"Filetto di platessa, quinoa e zucchine",k:470,p:38,c:40,f:12,diet:[],ing:["platessa","quinoa","zucchine"]},
+    {t:"Insalatona di farro, feta e olive",k:520,p:18,c:60,f:20,diet:["v"],ing:["farro","feta","olive"]}
   ],
   spuntino:[
     {t:"Frutta secca e mela",k:200,p:6,c:22,f:11,diet:["v","vg"],ing:["noci","mela"]},
@@ -811,7 +961,13 @@ const FOODS={
     {t:"Gallette di riso e crema di arachidi",k:170,p:6,c:20,f:8,diet:["v","vg"],ing:["gallette","arachidi"]},
     {t:"Ricotta e frutti di bosco",k:160,p:14,c:12,f:6,diet:["v","lc"],ing:["ricotta","frutti di bosco"]},
     {t:"Edamame al vapore",k:150,p:14,c:12,f:6,diet:["v","vg","lc"],ing:["edamame"]},
-    {t:"Barretta proteica e tè verde",k:200,p:20,c:18,f:6,diet:["v"],ing:["barretta proteica"]}
+    {t:"Barretta proteica e tè verde",k:200,p:20,c:18,f:6,diet:["v"],ing:["barretta proteica"]},
+    {t:"Banana e burro di mandorle",k:210,p:6,c:28,f:9,diet:["v","vg"],ing:["banana","mandorle"]},
+    {t:"Cracker integrali e hummus",k:180,p:7,c:22,f:8,diet:["v","vg"],ing:["cracker","hummus"]},
+    {t:"Cioccolato fondente e noci",k:190,p:5,c:14,f:14,diet:["v","vg","lc"],ing:["cioccolato","noci"]},
+    {t:"Frullato proteico alla vaniglia",k:170,p:24,c:10,f:3,diet:["v"],ing:["proteine","latte"]},
+    {t:"Pop corn al naturale",k:120,p:4,c:22,f:3,diet:["v","vg"],ing:["mais"]},
+    {t:"Macedonia di frutta fresca",k:130,p:2,c:30,f:1,diet:["v","vg"],ing:["frutta"]}
   ],
   cena:[
     {t:"Merluzzo al forno e verdure",k:430,p:40,c:26,f:12,diet:["lc"],ing:["merluzzo","verdure"]},
@@ -822,7 +978,13 @@ const FOODS={
     {t:"Zuppa di legumi e crostini",k:400,p:22,c:54,f:8,diet:["v","vg"],ing:["legumi","pane"]},
     {t:"Gamberi, zucchine e quinoa",k:440,p:36,c:40,f:12,diet:[],ing:["gamberi","zucchine","quinoa"]},
     {t:"Burger di lenticchie e insalata",k:420,p:22,c:44,f:14,diet:["v","vg"],ing:["lenticchie","insalata"]},
-    {t:"Pollo al curry e riso basmati",k:520,p:40,c:52,f:14,diet:[],ing:["pollo","curry","riso"]}
+    {t:"Pollo al curry e riso basmati",k:520,p:40,c:52,f:14,diet:[],ing:["pollo","curry","riso"]},
+    {t:"Vellutata di zucca e ceci tostati",k:380,p:16,c:52,f:10,diet:["v","vg"],ing:["zucca","ceci"]},
+    {t:"Uova, spinaci e patate al forno",k:420,p:26,c:32,f:18,diet:["v"],ing:["uova","spinaci","patate"]},
+    {t:"Branzino al cartoccio e verdure",k:400,p:40,c:18,f:16,diet:["lc"],ing:["branzino","verdure"]},
+    {t:"Tempeh saltato e verdure croccanti",k:430,p:28,c:34,f:18,diet:["v","vg"],ing:["tempeh","verdure"]},
+    {t:"Petto di pollo, hummus e insalata",k:440,p:46,c:20,f:16,diet:["lc"],ing:["pollo","hummus","insalata"]},
+    {t:"Frittata di zucchine e ricotta",k:400,p:28,c:16,f:24,diet:["v","lc"],ing:["uova","zucchine","ricotta"]}
   ]
 };
 const CATS=[["colazione","Colazione","🥐"],["pranzo","Pranzo","🍲"],["spuntino","Spuntino","🍎"],["cena","Cena","🐟"]];
@@ -837,15 +999,75 @@ function dislikedOk(m){
   const dis=(S.disliked||[]).map(x=>x.toLowerCase().trim()).filter(Boolean);
   return !m.ing.some(i=>dis.some(d=>i.toLowerCase().includes(d)||d.includes(i.toLowerCase())));
 }
-function genMeals(cat){
+function seededShuffle(arr,seed){
+  const a=arr.slice(); let s=(seed*2654435761)%2147483647; if(s<=0)s+=2147483646;
+  for(let i=a.length-1;i>0;i--){ s=(s*16807)%2147483647; const j=s%(i+1); const t=a[i];a[i]=a[j];a[j]=t; }
+  return a;
+}
+function availMeals(cat){
   let list=FOODS[cat].filter(m=>dietOk(m)&&dislikedOk(m));
   if(!list.length) list=FOODS[cat].filter(dislikedOk);
   if(!list.length) list=FOODS[cat].slice();
-  const off=((S.mealOffset&&S.mealOffset[cat])||0)%list.length;
-  const rot=list.slice(off).concat(list.slice(0,off));
-  return rot.slice(0,3);
+  return list;
+}
+function genMeals(cat){
+  const list=availMeals(cat);
+  const seed=((S.mealOffset&&S.mealOffset[cat])||0)+1;
+  return seededShuffle(list,seed).slice(0,3);
 }
 function mealDesc(o){return `P ${o.p} · C ${o.c} · G ${o.f}${o.diet.includes("vg")?" · vegan":(o.diet.includes("v")?" · veg":"")}`;}
+
+/* ---- PDF dieta settimanale ---- */
+function weeklyPlan(){
+  const days=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+  return days.map((day,di)=>{
+    const meals=CATS.map(([cat,label])=>{
+      const list=availMeals(cat);
+      let pick;
+      if(di===0 && S.planChoices[cat]) pick=list.find(m=>m.t===S.planChoices[cat])||seededShuffle(list,((S.mealOffset&&S.mealOffset[cat])||0)+1)[0];
+      else pick=seededShuffle(list, ((S.mealOffset&&S.mealOffset[cat])||0)+1+di*13)[0];
+      return {label,meal:pick};
+    });
+    const kcal=meals.reduce((a,m)=>a+(m.meal?m.meal.k:0),0);
+    return {day,meals,kcal};
+  });
+}
+function generateWeekPDF(){
+  const wp=weightPlan(); const plan=weeklyPlan();
+  const JS=window.jspdf&&window.jspdf.jsPDF;
+  if(!JS){ printWeek(plan,wp); return; }
+  const doc=new JS({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth(); let y=50;
+  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(18,138,99); doc.text('Auréa · Dieta settimanale',40,y); y+=22;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(90);
+  doc.text(`${S.user.name} · obiettivo ${S.user.goal} · ~${wp.kcal} kcal/giorno · dieta ${S.diet}`,40,y); y+=14;
+  const adapt=[]; if(S.health.diabete!=='No')adapt.push('diabete '+S.health.diabete); if((S.health.intolleranze||[]).length)adapt.push('senza '+S.health.intolleranze.join(', '));
+  if(adapt.length){doc.text('Personalizzato: '+adapt.join(' · '),40,y);y+=14;}
+  y+=6;
+  plan.forEach(d=>{
+    if(y>770){doc.addPage();y=50;}
+    doc.setFillColor(230,246,239); doc.rect(40,y-12,W-80,20,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(18,33,27); doc.text(d.day+'  ·  '+d.kcal+' kcal',48,y+2); y+=24;
+    doc.setFontSize(10);
+    d.meals.forEach(m=>{
+      doc.setFont('helvetica','bold'); doc.setTextColor(31,150,110); doc.text(m.label+':',48,y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(40);
+      const line=doc.splitTextToSize((m.meal?m.meal.t:'-')+'  ('+(m.meal?m.meal.k:0)+' kcal)',W-170);
+      doc.text(line,135,y); y+=13*line.length+3;
+    });
+    y+=8;
+  });
+  if(y>780){doc.addPage();y=50;}
+  doc.setFontSize(8.5); doc.setTextColor(150); doc.text('Generato da Auréa · piano indicativo, non sostituisce un parere medico/nutrizionale.',40,Math.min(y+10,812));
+  doc.save('Aurea-dieta-settimanale.pdf');
+  toast('PDF della dieta creato ✓');
+}
+function printWeek(plan,wp){
+  let html=`<h1 style="color:#128a63;font-family:sans-serif">Auréa · Dieta settimanale</h1><p style="font-family:sans-serif">${S.user.name} · ${S.user.goal} · ~${wp.kcal} kcal/giorno · dieta ${S.diet}</p>`;
+  plan.forEach(d=>{html+=`<h3 style="font-family:sans-serif;background:#e6f6ef;padding:6px 10px;border-radius:6px">${d.day} — ${d.kcal} kcal</h3><ul style="font-family:sans-serif">`+d.meals.map(m=>`<li style="margin:4px 0"><b>${m.label}:</b> ${m.meal?m.meal.t:'-'} <span style="color:#128a63">(${m.meal?m.meal.k:0} kcal)</span></li>`).join('')+`</ul>`;});
+  const w=window.open('','_blank'); if(!w){toast('Consenti i popup per scaricare il PDF');return;}
+  w.document.write('<html><head><title>Dieta Auréa</title></head><body style="padding:24px">'+html+'<p style="color:#999;font-family:sans-serif;font-size:12px">Usa Condividi → Stampa → Salva come PDF</p></body></html>');
+  w.document.close(); setTimeout(()=>w.print(),300); toast('Apri il menu Condividi e salva come PDF');
+}
 function planHTML(){
   const wp=weightPlan();
   return `
@@ -913,8 +1135,9 @@ function planHTML(){
     </div>`;
   }).join('')}
 
-  <button class="btn" onclick="go('frigo')">🛒 Crea lista della spesa dal frigo</button>
-  <div class="tiny">Fotografa il frigo: l'AI crea la spesa mancante e i piatti fattibili ora.</div>
+  <button class="btn" onclick="generateWeekPDF()">📄 Scarica la dieta settimanale (PDF)</button>
+  <button class="btn sec" style="margin-top:10px" onclick="go('frigo')">🛒 Crea lista della spesa dal frigo</button>
+  <div class="tiny">Il PDF usa le opzioni che hai scelto e le varia sui 7 giorni.</div>
   `;
 }
 function renderDislike(){
@@ -1000,17 +1223,21 @@ function segSelect(btn){const p=btn.parentNode;p.querySelectorAll('.chip').forEa
 
 /* ---------- PRENOTA ---------- */
 const DOCTORS=[
-  {n:"Dr.ssa Bianchi",s:"Nutrizionista",ic:"🥗",r:"4.9",p:"€60",tags:["Video","In studio"],when:"Prima disp. domani"},
-  {n:"Dr. Ferrari",s:"Medico estetico",ic:"✨",r:"4.8",p:"€90",tags:["In studio"],when:"Gio 24 lug"},
-  {n:"Dr.ssa Greco",s:"Diabetologo",ic:"🩸",r:"5.0",p:"€75",tags:["Video","In studio"],when:"Lun 21 lug"},
-  {n:"Dr. Russo",s:"Dermatologo estetico",ic:"🧴",r:"4.7",p:"€85",tags:["In studio"],when:"Mer 23 lug"},
-  {n:"Dr.ssa Costa",s:"Endocrinologo",ic:"⚕️",r:"4.9",p:"€100",tags:["Video"],when:"Ven 25 lug"},
-  {n:"Dr.ssa Marino",s:"Ginecologo",ic:"🌸",r:"4.9",p:"€80",tags:["Video","In studio"],when:"Mar 22 lug"},
-  {n:"Est. Lombardi",s:"Estetista · trattamenti viso",ic:"💆",r:"4.8",p:"€45",tags:["In studio"],when:"Oggi 18:00"},
-  {n:"Dr. Conti",s:"Personal trainer",ic:"🏋️",r:"4.8",p:"€40",tags:["Video","In palestra"],when:"Domani 7:00"},
-  {n:"Dr.ssa Fontana",s:"Psicologa · supporto emotivo",ic:"🧠",r:"5.0",p:"€70",tags:["Video","In studio"],when:"Lun 21 lug"},
-  {n:"Dr.ssa Vitale",s:"Psiconutrizionista",ic:"💚",r:"4.9",p:"€65",tags:["Video"],when:"Mer 23 lug"}
+  {n:"Dr.ssa Bianchi",s:"Nutrizionista",ic:"🥗",r:"4.9",p:"€60",tags:["Video","In studio"],when:"Prima disp. domani",v:true,f:3420,nr:128,ente:"Ordine Nazionale dei Biologi"},
+  {n:"Dr. Ferrari",s:"Medico estetico",ic:"✨",r:"4.8",p:"€90",tags:["In studio"],when:"Gio 24 lug",v:true,f:5100,nr:96,ente:"Ordine dei Medici (OMCeO)"},
+  {n:"Dr.ssa Greco",s:"Diabetologo",ic:"🩸",r:"5.0",p:"€75",tags:["Video","In studio"],when:"Lun 21 lug",v:true,f:2110,nr:74,ente:"Ordine dei Medici (OMCeO)"},
+  {n:"Dr. Russo",s:"Dermatologo estetico",ic:"🧴",r:"4.7",p:"€85",tags:["In studio"],when:"Mer 23 lug",v:true,f:1890,nr:58,ente:"Ordine dei Medici (OMCeO)"},
+  {n:"Dr.ssa Costa",s:"Endocrinologo",ic:"⚕️",r:"4.9",p:"€100",tags:["Video"],when:"Ven 25 lug",v:true,f:2760,nr:81,ente:"Ordine dei Medici (OMCeO)"},
+  {n:"Dr.ssa Marino",s:"Ginecologo",ic:"🌸",r:"4.9",p:"€80",tags:["Video","In studio"],when:"Mar 22 lug",v:true,f:4300,nr:112,ente:"Ordine dei Medici (OMCeO)"},
+  {n:"Est. Lombardi",s:"Estetista · trattamenti viso",ic:"💆",r:"4.8",p:"€45",tags:["In studio"],when:"Oggi 18:00",v:true,f:980,nr:44,ente:"Qualifica professionale regionale"},
+  {n:"Dr. Conti",s:"Personal trainer",ic:"🏋️",r:"4.8",p:"€40",tags:["Video","In palestra"],when:"Domani 7:00",v:true,f:6200,nr:150,ente:"Laurea Scienze Motorie · CONI"},
+  {n:"Dr.ssa Fontana",s:"Psicologa · supporto emotivo",ic:"🧠",r:"5.0",p:"€70",tags:["Video","In studio"],when:"Lun 21 lug",v:true,f:3050,nr:89,ente:"Ordine degli Psicologi"},
+  {n:"Dr.ssa Vitale",s:"Psiconutrizionista",ic:"💚",r:"4.9",p:"€65",tags:["Video"],when:"Mer 23 lug",v:true,f:1520,nr:37,ente:"Ordine dei Biologi + Psicologi"}
 ];
+function docReviews(name){return (S.docReviews&&S.docReviews[name])||[];}
+function docRating(d){const ur=docReviews(d.n);const base=parseFloat(d.r)||5;if(!ur.length)return base.toFixed(1);const sum=base*d.nr+ur.reduce((a,b)=>a+b.stars,0);return (sum/(d.nr+ur.length)).toFixed(1);}
+function docReviewCount(d){return d.nr+docReviews(d.n).length;}
+function stars(n){n=Math.round(n);return '★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);}
 const SPECS=["Tutti","Nutrizionista","Estetico","Psicologa","Diabetologo","Dermatologo","Ginecologo","Endocrinologo","Trainer"];
 function prenotaHTML(){
   return `
@@ -1036,23 +1263,43 @@ function renderMyAppts(){
       <div class="rv"><span class="chip grey" style="padding:5px 9px;font-size:10px">${a.mode}</span></div>
     </div>`).join('') || '<div class="sub">Nessun appuntamento in programma.</div>';
 }
+function allDocs(){
+  let list=DOCTORS.slice();
+  if(S.pro && S.pro.status==='verificato'){
+    list.unshift({n:S.pro.name,s:S.pro.profession,ic:S.pro.ic||'👤',r:'5.0',p:S.pro.price||'€—',tags:["Video"],when:"Tu · disponibile",v:true,f:(S.following?0:0)+ (S.pro.followers||0),nr:0,ente:S.pro.ente,me:true});
+  }
+  return list;
+}
 function renderDocs(filter){
   const c=document.getElementById('doc-list'); if(!c)return;
-  const list=(!filter||filter==='Tutti')?DOCTORS:DOCTORS.filter(d=>d.s.toLowerCase().includes(filter.toLowerCase()));
+  const base=allDocs();
+  const list=(!filter||filter==='Tutti')?base:base.filter(d=>d.s.toLowerCase().includes(filter.toLowerCase()));
   c.innerHTML=list.map((d,i)=>`
-    <div class="pro">
+    <div class="pro" style="flex-wrap:wrap">
       <div class="ph">${d.ic}</div>
       <div class="pi">
-        <b>${d.n}</b>
+        <b>${d.n} ${d.v?'<span title="Verificato" style="color:var(--green-d)">✔️</span>':''}</b>
         <small>${d.s}</small>
-        <div style="margin-top:5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span class="rate">★ ${d.r}</span>
-          <span class="sub" style="font-size:11px">· ${d.when}</span>
-          <span class="price" style="font-size:12px">· ${d.p}</span>
+        <div style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="rate">★ ${docRating(d)}</span>
+          <span class="sub" style="font-size:11px">(${docReviewCount(d)} recensioni)</span>
+          <span class="sub" style="font-size:11px">· 👥 ${fmt(d.f)}</span>
         </div>
+        <div class="sub" style="font-size:10.5px;margin-top:3px">${d.v?'🎓 '+d.ente:'⏳ in verifica'} · ${d.when} · ${d.p}</div>
       </div>
-      <button class="btn sm" style="width:auto;padding:10px 12px;align-self:center" onclick="book('${d.n}','${d.s}','${d.ic}','${d.when}')">Prenota</button>
+      <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
+        ${d.me?`<button class="btn sm sec" style="width:auto;padding:9px 12px" onclick="go('pro')">Gestisci</button>`:`<button class="btn sm" style="width:auto;padding:9px 12px" onclick="book('${d.n}','${d.s}','${d.ic}','${d.when}')">Prenota</button>
+        <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="rateDoctor('${d.n.replace(/'/g,'')}')">⭐ Valuta</button>`}
+      </div>
     </div>`).join('');
+}
+function rateDoctor(name){
+  const sv=prompt('Che voto dai a '+name+'? (1-5 stelle)','5'); if(sv===null)return;
+  const st=Math.max(1,Math.min(5,parseInt(sv)||0)); if(!st){toast('Voto non valido');return;}
+  const tx=prompt('Lascia una recensione (facoltativa):','')||'';
+  S.docReviews=S.docReviews||{}; (S.docReviews[name]=S.docReviews[name]||[]).unshift({stars:st,txt:tx.trim(),by:S.user.name});
+  save(); renderDocs(document.querySelector('#spec-filter .chip.sel')?.textContent||'Tutti');
+  toast('Grazie! Recensione pubblicata ⭐'+st);
 }
 function filterDocs(s,btn){document.querySelectorAll('#spec-filter .chip').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');renderDocs(s);}
 function book(n,s,ic,when){
@@ -1239,6 +1486,8 @@ function profiloHTML(){
 
   <div class="card tight">
     <div class="row" onclick="go('storia')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📋</div><div class="rt"><b>Storia clinica</b><small>personalizza il piano</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--violet-s)">🎓</div><div class="rt"><b>${S.pro?'Il mio profilo professionista':'Diventa professionista'}</b><small>${S.pro?(S.pro.status==='verificato'?'verificato ✔️':'in verifica ⏳'):'nutrizionista, medico, PT…'}</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('cloud')" style="cursor:pointer"><div class="ri" style="background:#e8f1ff">☁️</div><div class="rt"><b>${loggedIn()?'Account cloud':'Attiva modalità reale'}</b><small>${loggedIn()?(cloudUser.email):'account veri + video reali'}</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('prenota')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">🩺</div><div class="rt"><b>Le mie visite</b></div><div class="rv">›</div></div>
     <div class="row" onclick="openCart()" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📦</div><div class="rt"><b>I miei ordini</b></div><div class="rv">›</div></div>
     <div class="row" onclick="go('promemoria')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">⏰</div><div class="rt"><b>Promemoria</b></div><div class="rv">›</div></div>
@@ -1565,23 +1814,45 @@ function breathe(){
 }
 
 /* ---------- COMMUNITY ---------- */
-const POSTS=[
-  {u:"Dr.ssa Bianchi",av:"B",c:"#1fae7e",t:"1h",tag:"Esperto",pro:true,txt:"Promemoria dolce 💚 In fase luteale è normale avere più fame: aumentate proteine e fibre invece di colpevolizzarvi. Il corpo lavora per voi.",likes:88,cm:20,liked:false},
-  {u:"Giulia M.",av:"G",c:"#f5a623",t:"2h",tag:"Ricetta",txt:"Ho rifatto i pancake proteici del piano con cannella e frutti di bosco 🥞 Colazione da 360 kcal, buonissima. Ve li consiglio!",likes:34,cm:9,liked:false},
-  {u:"Marco T.",av:"M",c:"#3b9dff",t:"4h",tag:"Consiglio",txt:"Trucco per il deficit: un bicchiere d'acqua prima di ogni pasto. Mi ha aiutato tantissimo a gestire la fame nervosa.",likes:51,cm:14,liked:false},
-  {u:"Sara R.",av:"S",c:"#7c5cff",t:"1g",tag:"Motivazione",txt:"Piccola vittoria: -2 kg questo mese e più energia di prima 🎉 Grazie a chi mi ha dato dritte qui dentro!",likes:63,cm:18,liked:false}
+/* ===== SHORTS (feed social verticale) ===== */
+const SHORTS=[
+  {id:1,user:"giulia.fit",av:"G",avc:"#f5a623",verified:true,type:"What I eat",diet:"Vegana",goal:"Dimagrimento",emoji:"🥗",from:"#ff9a7a",to:"#ff6f8b",label:"colonna sonora originale",dur:"0:48",
+   cap:"WHAT I EAT IN A DAY 🌱 giornata vegana da 1500 kcal · colazione, pranzo, cena + snack",tags:["whatieat","vegan","dimagrimento"],likes:12400,comments:340,shares:890,saves:2100,views:214000,followers:48200,viral:true},
+  {id:2,user:"marco.strong",av:"M",avc:"#3b9dff",verified:false,type:"Allenamento",diet:"Low-carb",goal:"Massa",emoji:"🏋️",from:"#6d4dff",to:"#a07bff",label:"gym motivation",dur:"0:35",
+   cap:"PUSH DAY completo 💪 petto e tricipiti · salva per la prossima sessione",tags:["workout","pushday","massa"],likes:8600,comments:210,shares:430,saves:1500,views:132000,followers:22100,viral:false},
+  {id:3,user:"sara.wellness",av:"S",avc:"#7c5cff",verified:true,type:"Trasformazione",diet:"Onnivora",goal:"Dimagrimento",emoji:"✨",from:"#1fae7e",to:"#4bd4a6",label:"my journey",dur:"0:52",
+   cap:"6 mesi di costanza, -12 kg 🥹 non mollate mai. La testa conta più della bilancia.",tags:["trasformazione","motivazione","dimagrimento"],likes:23100,comments:1200,shares:2000,saves:3400,views:410000,followers:91000,viral:true},
+  {id:4,user:"chef.luca",av:"L",avc:"#128a63",verified:false,type:"Ricetta",diet:"Vegetariana",goal:"Mantenimento",emoji:"🍳",from:"#f5a623",to:"#ffcf6a",label:"ricetta veloce",dur:"0:41",
+   cap:"Frittata proteica di albumi e spinaci in 5 min · 280 kcal 🔥 #ricettafit",tags:["ricetta","proteico","veg"],likes:5400,comments:98,shares:260,saves:1900,views:74000,followers:15600,viral:false},
+  {id:5,user:"anna.balance",av:"A",avc:"#ff6f8b",verified:false,type:"What I eat",diet:"Onnivora",goal:"Mantenimento",emoji:"🍽️",from:"#3b9dff",to:"#7ec8ff",label:"day in my life",dur:"0:59",
+   cap:"WIED da mantenimento 2000 kcal · equilibrio senza rinunce 💚",tags:["whatieat","equilibrio","mantenimento"],likes:3200,comments:76,shares:120,saves:600,views:41000,followers:8900,viral:false},
+  {id:6,user:"diego.run",av:"D",avc:"#f5a623",verified:false,type:"Allenamento",diet:"Onnivora",goal:"Dimagrimento",emoji:"🏃",from:"#1fae7e",to:"#38c79a",label:"cardio vibes",dur:"0:30",
+   cap:"10.000 passi + corsa: come brucio 500 kcal al giorno senza palestra 👟",tags:["cardio","running","dimagrimento"],likes:6900,comments:150,shares:340,saves:980,views:98000,followers:19400,viral:false},
+  {id:7,user:"vale.vegan",av:"V",avc:"#7c5cff",verified:true,type:"Ricetta",diet:"Vegana",goal:"Massa",emoji:"🥤",from:"#6d4dff",to:"#9c85ff",label:"proteine vegetali",dur:"0:44",
+   cap:"Frullato vegano 40g di proteine 🌱 perfetto post-workout per la massa",tags:["vegan","proteine","massa"],likes:7700,comments:190,shares:520,saves:2200,views:120000,followers:34000,viral:false}
 ];
-const CRECIPES=[
-  {u:"Elena F.",n:"Bowl proteica quinoa & ceci",k:480,d:"P 26 · C 54 · G 14",ing:"quinoa, ceci, avocado, pomodorini, limone",ic:"🥗",bg:"var(--mint)"},
-  {u:"Luca P.",n:"Salmone teriyaki light",k:520,d:"P 40 · C 44 · G 18",ing:"salmone, soia, miele, broccoli, riso",ic:"🐟",bg:"#e8f1ff"},
-  {u:"Sofia G.",n:"Overnight oats al cacao",k:340,d:"P 18 · C 46 · G 9",ing:"avena, latte, cacao, banana, chia",ic:"🍫",bg:"#fff0e0"}
-];
+function fmt(n){return n>=1e6?(n/1e6).toFixed(1).replace('.0','')+'M':n>=1e3?(n/1e3).toFixed(1).replace('.0','')+'k':''+n;}
+function isFollowing(u){return (S.following||[]).includes(u);}
+function shortScore(s){
+  let sc = s.likes + s.comments*3 + s.shares*4 + s.saves*2 + s.views/500; // più interattivi = più in alto
+  if(s.diet===S.diet) sc*=1.7;                 // personalizzazione per dieta
+  if(s.goal===S.user.goal) sc*=1.6;            // personalizzazione per obiettivo
+  if(isFollowing(s.user)) sc*=1.5;             // chi segui
+  if(s.viral) sc*=1.3;
+  return sc;
+}
+function feedShorts(only){
+  let list=SHORTS.slice();
+  if(only==='seguiti') list=list.filter(s=>isFollowing(s.user));
+  return list.sort((a,b)=>shortScore(b)-shortScore(a));
+}
 function communityHTML(){
   return `
-  <div class="topbar"><div class="hello"><div class="k">2.4k membri · online ora 312</div><div class="n">👥 Community</div></div><div class="avatar" onclick="go('profilo')">${S.user.initials}</div></div>
-  <div class="seg" id="com-tab" style="margin-bottom:16px">
-    <button class="on" onclick="comTab('feed',this)">Feed</button>
-    <button onclick="comTab('ricette',this)">Ricette</button>
+  <div class="topbar"><div class="hello"><div class="k">2.4k creator · ${(S.following||[]).length} seguiti</div><div class="n">👥 Community</div></div>
+    <button class="compose-btn" style="position:static" onclick="${cloudOn()&&loggedIn()?'composeVideoReal()':'composeShort()'}">🎬 Pubblica</button></div>
+  <div class="seg" id="com-tab" style="margin-bottom:14px">
+    <button class="on" onclick="comTab('perte',this)">Per te</button>
+    <button onclick="comTab('seguiti',this)">Seguiti</button>
     <button onclick="comTab('chat',this)">Chat</button>
   </div>
   <div id="com-body"></div>`;
@@ -1589,31 +1860,20 @@ function communityHTML(){
 function comTab(t,btn){document.querySelectorAll('#com-tab button').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');renderComBody(t);}
 function renderComBody(t){
   const b=document.getElementById('com-body'); if(!b)return; b.dataset.t=t;
-  if(t==='feed'){
-    b.innerHTML=`
-      <div class="card tight">
-        <div style="display:flex;gap:10px;align-items:center">
-          <div class="avatar" style="width:40px;height:40px;border-radius:13px;font-size:15px">${S.user.initials}</div>
-          <input id="post-in" placeholder="Condividi un consiglio, una ricetta…" style="flex:1;border:1px solid var(--line);border-radius:20px;padding:11px 14px;font-size:13px;outline:none">
-          <button class="add" style="width:38px;height:38px;border-radius:12px" onclick="sendPost()">➤</button>
-        </div>
-      </div>
-      <div id="feed-list">${POSTS.map((p,i)=>postCard(p,i)).join('')}</div>`;
-  } else if(t==='ricette'){
-    b.innerHTML=`
-      <div class="alert info"><span>🍳</span><div>Ricette condivise dalla community, tutte compatibili con piani nutrizionali. Salvale nel tuo piano o aggiungi gli ingredienti alla spesa.</div></div>
-      ${CRECIPES.map((r,i)=>`
-        <div class="card">
-          <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
-            <div class="pimg" style="height:56px;width:56px;flex:0 0 56px;margin:0;background:${r.bg};border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px">${r.ic}</div>
-            <div style="flex:1"><b style="font-size:15px">${r.n}</b><div class="sub">di ${r.u} · ${r.k} kcal · ${r.d}</div></div>
-          </div>
-          <div class="sub" style="margin-bottom:10px">🧺 ${r.ing}</div>
-          <div class="grid2">
-            <button class="btn sm sec" onclick="toast('Ricetta salvata nel tuo piano ✓')">＋ Salva nel piano</button>
-            <button class="btn sm" onclick="toast('Ingredienti aggiunti alla lista della spesa')">🛒 Alla spesa</button>
-          </div>
-        </div>`).join('')}`;
+  if(t==='perte'||t==='seguiti'){
+    if(cloudOn()&&loggedIn()){
+      b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Caricamento feed reale…</div></div>';
+      cloudFeed().then(posts=>{
+        if(!posts.length){ b.innerHTML=`<div class="card" style="text-align:center"><div style="font-size:44px">🎬</div><div class="h" style="justify-content:center">Ancora nessun video</div><div class="sub">Sii il primo! Tocca <b>🎬 Pubblica</b> in alto e carica il tuo "What I eat in a day" o allenamento.</div></div>`; return; }
+        const ranked=posts.map(p=>({p,sc:(p.likes||0)*3 + (p.diet===S.diet?50:0) + (p.goal===S.user.goal?40:0)})).sort((a,b)=>b.sc-a.sc).map(x=>x.p);
+        b.innerHTML=`<div class="sub" style="margin:0 4px 8px">✨ Feed reale personalizzato per la tua dieta ${S.diet||''} e obiettivo ${S.user.goal||''}</div><div class="shorts-feed" id="shorts-feed">${ranked.map(realShortCard).join('')}</div>`;
+      });
+      return;
+    }
+    const list=feedShorts(t);
+    if(!list.length){b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Non segui ancora nessuno.<br>Vai su "Per te" e tocca <b>+ Segui</b> sui creator che ti piacciono.</div></div>';return;}
+    b.innerHTML=`<div class="sub" style="margin:0 4px 8px">${t==='perte'?'✨ Feed personalizzato per la tua dieta '+(S.diet||'')+' e il tuo obiettivo '+(S.user.goal||''):'👥 Solo i creator che segui'}${cloudOn()?'':' · <a onclick="go(\'cloud\')" style="color:var(--green-d);font-weight:700;cursor:pointer">attiva video reali</a>'}</div>
+      <div class="shorts-feed" id="shorts-feed">${list.map(s=>shortCard(s)).join('')}</div>`;
   } else {
     b.innerHTML=`
       <div class="alert ok"><span>💬</span><div><b>Gruppo "Percorso benessere"</b> · scambiatevi idee, ricette e supporto in tempo reale.</div></div>
@@ -1621,22 +1881,89 @@ function renderComBody(t){
       <div class="chatbar"><input id="com-in" placeholder="Scrivi al gruppo…" onkeydown="if(event.key==='Enter')sendChat()"><button onclick="sendChat()">➤</button></div>`;
   }
 }
-function postCard(p,i){
-  return `<div class="card">
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-      <div class="avatar" style="width:42px;height:42px;border-radius:13px;font-size:15px;background:${p.c}">${p.av}</div>
-      <div style="flex:1"><b style="font-size:14px">${p.u} ${p.pro?'✔️':''}</b><div class="sub">${p.t} fa · <span style="color:var(--green-d);font-weight:700">#${p.tag}</span></div></div>
+function shortCard(s){
+  const f=isFollowing(s.user);
+  const match = s.diet===S.diet?('stessa dieta · '+s.diet) : (s.goal===S.user.goal?('stesso obiettivo · '+s.goal):'');
+  return `<div class="short" data-id="${s.id}">
+    <div class="poster" style="background:linear-gradient(160deg,${s.from},${s.to})">${s.emoji}</div>
+    <div class="grad"></div>
+    <div class="badge ${s.viral?'viral':''}">${s.viral?'🔥 Virale':'▶ '+s.dur} · ${s.type}</div>
+    ${match?`<div class="badge foryou">✨ Per te · ${match}</div>`:''}
+    <div class="rail">
+      <div class="ravatar" style="background:${s.avc}" onclick="toggleFollow('${s.user}',this)">${s.av}${f?'':'<span class="plus">＋</span>'}</div>
+      <button onclick="likeShort(${s.id},this)"><span>${s.liked?'❤️':'🤍'}</span><span class="cnt">${fmt(s.likes)}</span></button>
+      <button onclick="toast('Commenti (${s.comments})')"><span>💬</span><span class="cnt">${fmt(s.comments)}</span></button>
+      <button onclick="shareShort(${s.id},this)"><span>↗</span><span class="cnt">${fmt(s.shares)}</span></button>
+      <button onclick="saveShort(${s.id},this)"><span>${s.saved?'🔖':'🏷️'}</span><span class="cnt">${fmt(s.saves)}</span></button>
     </div>
-    <div style="font-size:14px;line-height:1.5;margin-bottom:12px">${p.txt}</div>
-    <div style="display:flex;gap:18px;color:var(--muted);font-size:13px;font-weight:700">
-      <span onclick="likePost(${i},this)" style="cursor:pointer;color:${p.liked?'var(--coral)':'var(--muted)'}">${p.liked?'❤️':'🤍'} ${p.likes}</span>
-      <span style="cursor:pointer">💬 ${p.cm}</span>
-      <span style="cursor:pointer;margin-left:auto" onclick="toast('Post condiviso')">↗ Condividi</span>
+    <div class="info">
+      <div class="uname">@${s.user} ${s.verified?'✔️':''} <button class="foll-btn ${f?'ing':''}" onclick="toggleFollow('${s.user}',this)">${f?'Segui già':'+ Segui'}</button></div>
+      <div class="sub" style="color:rgba(255,255,255,.85);margin-top:2px">${fmt(s.followers)} follower</div>
+      <div class="cap">${s.cap}</div>
+      <div class="chips">${s.tags.map(t=>`<span class="chip w">#${t}</span>`).join('')}</div>
+      <div style="font-size:11px;opacity:.85;margin-top:8px">👁️ ${fmt(s.views)} · 🎵 ${s.label}</div>
     </div>
   </div>`;
 }
-function likePost(i,el){const p=POSTS[i];p.liked=!p.liked;p.likes+=p.liked?1:-1;renderComBody('feed');}
-function sendPost(){const el=document.getElementById('post-in');const v=(el.value||'').trim();if(!v)return;POSTS.unshift({u:S.user.name+" R.",av:S.user.initials,c:"#1fae7e",t:"ora",tag:"Community",txt:v,likes:0,cm:0,liked:false});renderComBody('feed');toast('Pubblicato nella community 🎉');}
+function realShortCard(p){
+  return `<div class="short" data-pid="${p.id}">
+    <video src="${p.video_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" playsinline loop muted controls preload="metadata"></video>
+    <div class="grad"></div>
+    <div class="badge">▶ ${p.type||'Video'}</div>
+    <div class="rail">
+      <button onclick="likeRealPost('${p.id}',${p.likes||0},this)"><span>🤍</span><span class="cnt">${fmt(p.likes||0)}</span></button>
+      <button onclick="toast('Commenti in arrivo')"><span>💬</span><span class="cnt">0</span></button>
+      <button onclick="toast('Condiviso 🔗')"><span>↗</span><span class="cnt">0</span></button>
+    </div>
+    <div class="info">
+      <div class="uname">@${(p.author||'utente')}</div>
+      <div class="cap">${(p.caption||'').replace(/</g,'&lt;')}</div>
+      <div class="chips">${[p.diet,p.goal].filter(Boolean).map(t=>`<span class="chip w">#${t}</span>`).join('')}</div>
+    </div>
+  </div>`;
+}
+function likeRealPost(id,cur,btn){ cloudLikePost(id,cur); btn.innerHTML='<span>❤️</span><span class="cnt">'+fmt((cur||0)+1)+'</span>'; }
+function composeVideoReal(){
+  if(!cloudOn()||!loggedIn()){toast('Attiva il cloud e accedi per caricare video');go('cloud');return;}
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*'; inp.setAttribute('capture','user');
+  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
+    const cap=prompt('Descrizione del video (es. What I eat in a day):'); if(cap===null)return;
+    toast('Caricamento video in corso…');
+    try{ await cloudUploadVideo(f,{cap:(cap||'').trim()||'Il mio short',type:'What I eat'}); toast('Video pubblicato! 🎬'); renderComBody('perte'); }
+    catch(e){ toast('Errore: '+(e.message||e)); }
+  };
+  inp.click();
+}
+function shortById(id){return SHORTS.find(x=>x.id===id);}
+function likeShort(id,btn){const s=shortById(id);if(!s)return;s.liked=!s.liked;s.likes+=s.liked?1:-1;btn.innerHTML=`<span>${s.liked?'❤️':'🤍'}</span><span class="cnt">${fmt(s.likes)}</span>`;save();}
+function saveShort(id,btn){const s=shortById(id);if(!s)return;s.saved=!s.saved;s.saves+=s.saved?1:-1;btn.innerHTML=`<span>${s.saved?'🔖':'🏷️'}</span><span class="cnt">${fmt(s.saves)}</span>`;save();toast(s.saved?'Salvato nei preferiti':'Rimosso');}
+function shareShort(id,btn){const s=shortById(id);if(!s)return;s.shares++;btn.innerHTML=`<span>↗</span><span class="cnt">${fmt(s.shares)}</span>`;save();toast('Short condiviso 🔗');}
+function toggleFollow(user,el){
+  S.following=S.following||[];
+  const i=S.following.indexOf(user);
+  if(i<0){S.following.push(user);toast('Ora segui @'+user);} else {S.following.splice(i,1);toast('Non segui più @'+user);}
+  // aggiorna follower count
+  SHORTS.filter(s=>s.user===user).forEach(s=>{s.followers+=(i<0?1:-1);});
+  save();
+  // aggiorna in-place i bottoni di questo creator senza ricaricare il feed
+  const f=isFollowing(user);
+  document.querySelectorAll('#com-body .short').forEach(card=>{
+    const sid=+card.dataset.id; const s=shortById(sid); if(!s||s.user!==user)return;
+    const fb=card.querySelector('.foll-btn'); if(fb){fb.textContent=f?'Segui già':'+ Segui';fb.classList.toggle('ing',f);}
+    const rav=card.querySelector('.ravatar'); if(rav){rav.innerHTML=s.av+(f?'':'<span class="plus">＋</span>');}
+    const fc=card.querySelector('.uname+.sub'); if(fc)fc.textContent=fmt(s.followers)+' follower';
+  });
+}
+function composeShort(){
+  const cap=prompt('Descrivi il tuo short (What I eat, allenamento, ricetta...):'); if(!cap||!cap.trim())return;
+  const types=["What I eat","Allenamento","Ricetta","Trasformazione"];
+  const t=types[Math.min(3,Math.max(0,(parseInt(prompt('Tipo? 1=What I eat, 2=Allenamento, 3=Ricetta, 4=Trasformazione','1'))||1)-1))];
+  const emo={"What I eat":"🍽️","Allenamento":"🏋️","Ricetta":"🍳","Trasformazione":"✨"}[t];
+  SHORTS.unshift({id:Date.now(),user:(S.user.name||'io').toLowerCase().replace(/\s/g,'.'),av:S.user.initials,avc:"#1fae7e",verified:false,type:t,diet:S.diet,goal:S.user.goal,emoji:emo,from:"#1fae7e",to:"#4bd4a6",label:"audio originale",dur:"0:30",cap:cap.trim(),tags:[t.toLowerCase().replace(/\s/g,''),(S.diet||'').toLowerCase(),(S.user.goal||'').toLowerCase()].filter(Boolean),likes:0,comments:0,shares:0,saves:0,views:1,followers:(S.following?0:0),liked:false});
+  renderComBody('perte');
+  document.querySelectorAll('#com-tab button').forEach((b,i)=>b.classList.toggle('on',i===0));
+  toast('Short pubblicato! 🎬 Più interagisci, più diventi virale.');
+}
 function comMsg(m){return m.me?`<div class="msg me">${m.txt}</div>`:`<div class="msg ai"><b style="font-size:11px;color:var(--green-d)">${m.u}</b><br>${m.txt}</div>`;}
 const COM_REPLIES=["Ottima idea, grazie! 🙌","Anche io la faccio spesso, super!","Provo stasera e ti dico 😍","Concordo, funziona benissimo per me."];
 function sendChat(){
@@ -1966,6 +2293,188 @@ function healthBanner(){
   </div>`;
 }
 
+/* ---------- AREA PROFESSIONISTI ---------- */
+const PROFS=[
+  {v:"Biologo Nutrizionista",ic:"🥗",ente:"Ordine Nazionale dei Biologi (ONB)",albo:true},
+  {v:"Dietista",ic:"🥗",ente:"Laurea in Dietistica (L/SNT3) — elenco",albo:false},
+  {v:"Medico estetico",ic:"✨",ente:"Ordine dei Medici (OMCeO / FNOMCeO)",albo:true},
+  {v:"Diabetologo",ic:"🩸",ente:"Ordine dei Medici (OMCeO / FNOMCeO)",albo:true},
+  {v:"Dermatologo",ic:"🧴",ente:"Ordine dei Medici (OMCeO / FNOMCeO)",albo:true},
+  {v:"Ginecologo",ic:"🌸",ente:"Ordine dei Medici (OMCeO / FNOMCeO)",albo:true},
+  {v:"Endocrinologo",ic:"⚕️",ente:"Ordine dei Medici (OMCeO / FNOMCeO)",albo:true},
+  {v:"Psicologo",ic:"🧠",ente:"Ordine degli Psicologi (regionale)",albo:true},
+  {v:"Personal Trainer",ic:"🏋️",ente:"Laurea Scienze Motorie / cert. CONI",albo:false},
+  {v:"Estetista",ic:"💆",ente:"Qualifica professionale regionale",albo:false}
+];
+function profByName(v){return PROFS.find(p=>p.v===v)||PROFS[0];}
+function proHTML(){
+  if(S.pro) return proStatusHTML();
+  const first=PROFS[0];
+  return `<button class="back" onclick="go('profilo')">← Profilo</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Lavora con Auréa</div><div class="n">🎓 Area professionisti</div></div></div>
+  <div class="alert info"><span>🔐</span><div>Registrati come professionista per ricevere prenotazioni, follower e recensioni. I titoli vengono <b>verificati</b>: si può lavorare sulla piattaforma solo con credenziali valide e riconosciute in Italia.</div></div>
+  <div class="card">
+    <div class="field"><label>Professione</label><select id="pro-prof" onchange="proEnteUpdate()">${PROFS.map(p=>`<option>${p.v}</option>`).join('')}</select></div>
+    <div class="field"><label>Nome e cognome professionale</label><input id="pro-name" value="${(S.user.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field"><label>Titolo di studio</label><input id="pro-title" placeholder="es. Laurea Magistrale in Biologia della Nutrizione"></div>
+    <div class="grid2"><div class="field"><label>Università</label><input id="pro-uni" placeholder="es. Sapienza Roma"></div><div class="field"><label>Anno di laurea</label><input id="pro-year" type="number" inputmode="numeric" placeholder="es. 2016"></div></div>
+    <div class="field"><label>Ente / Albo di riferimento</label><input id="pro-ente" readonly value="${first.ente}"></div>
+    <div class="grid2"><div class="field"><label id="pro-albo-lbl">N. iscrizione albo</label><input id="pro-albo" inputmode="numeric" placeholder="es. 123456"></div><div class="field"><label>Regione / Provincia</label><input id="pro-reg" placeholder="es. Lazio"></div></div>
+    <div class="field"><label>Tariffa a visita</label><input id="pro-price" placeholder="es. €60"></div>
+    <div class="field"><label>Presentazione (bio)</label><textarea id="pro-bio" rows="2" style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:none" placeholder="Esperienza, specializzazioni..."></textarea></div>
+    <div class="card tight" style="border:1.5px dashed var(--green);box-shadow:none;background:var(--mint)">
+      <div class="h" style="font-size:14px">📎 Titoli e certificazioni</div>
+      <div id="pro-cert-status" class="sub">Nessun documento caricato. Carica laurea/abilitazione/iscrizione all'albo.</div>
+      <div class="grid2" style="margin-top:10px"><button class="btn sm sec" onclick="uploadCert()">📷 Fotografa</button><button class="btn sm sec" onclick="fileFallback(setCert)">🖼️ Da file</button></div>
+    </div>
+    <button class="btn" style="margin-top:14px" onclick="submitPro()">Invia per la verifica</button>
+    <div class="tiny">Inviando dichiari che i dati sono veri e verificabili. Le credenziali false comportano l'esclusione. La validazione definitiva avviene con l'ente competente (albo/ordine).</div>
+  </div>`;
+}
+let _proCert=null;
+function proEnteUpdate(){const v=document.getElementById('pro-prof').value;const p=profByName(v);document.getElementById('pro-ente').value=p.ente;const al=document.getElementById('pro-albo');const lbl=document.getElementById('pro-albo-lbl');if(p.albo){al.disabled=false;al.placeholder='es. 123456';lbl.textContent='N. iscrizione albo (obbligatorio)';}else{al.disabled=false;al.placeholder='se disponibile';lbl.textContent='N. iscrizione / matricola (facoltativo)';}}
+function uploadCert(){capturePhoto(setCert,'Inquadra il titolo / certificato');}
+function setCert(url){_proCert=url;const el=document.getElementById('pro-cert-status');if(el)el.innerHTML='✅ Documento caricato correttamente'+(url?`<br><img src="${url}" style="max-height:90px;border-radius:10px;margin-top:8px">`:'');}
+function submitPro(){
+  const prof=document.getElementById('pro-prof').value;
+  const p=profByName(prof);
+  const name=(document.getElementById('pro-name').value||'').trim();
+  const title=(document.getElementById('pro-title').value||'').trim();
+  const uni=(document.getElementById('pro-uni').value||'').trim();
+  const year=(document.getElementById('pro-year').value||'').trim();
+  const albo=(document.getElementById('pro-albo').value||'').trim();
+  const reg=(document.getElementById('pro-reg').value||'').trim();
+  const price=(document.getElementById('pro-price').value||'').trim()||'€—';
+  const bio=(document.getElementById('pro-bio').value||'').trim();
+  if(!name||!title){toast('Inserisci nome e titolo di studio');return;}
+  if(!_proCert){toast('Carica il certificato/titolo');return;}
+  if(p.albo && !/^[0-9]{4,}$/.test(albo)){toast('Numero d\'albo non valido (min 4 cifre)');return;}
+  S.pro={profession:prof,ic:p.ic,ente:p.ente,name,title,uni,year,albo,reg,price:price.startsWith('€')?price:'€'+price,bio,cert:_proCert,followers:0,status:'in_verifica',submitted:true};
+  save(); rebuild('pro'); go('pro');
+  toast('Inviato! Verifica dei titoli in corso…');
+  setTimeout(verifyPro,2600);
+}
+function verifyPro(){
+  if(!S.pro||S.pro.status!=='in_verifica')return;
+  const p=profByName(S.pro.profession);
+  const alboOk = !p.albo || /^[0-9]{4,}$/.test(S.pro.albo||'');
+  const complete = S.pro.name && S.pro.title && S.pro.cert;
+  if(alboOk && complete){ S.pro.status='verificato'; S.pro.verifiedAt='oggi'; }
+  else { S.pro.status='manuale'; }
+  save(); if(curScreen==='pro'){rebuild('pro');go('pro');} rebuild('prenota');
+  toast(S.pro.status==='verificato'?'Titoli verificati ✔️ Ora sei attivo!':'Servono documenti aggiuntivi');
+}
+function proStatusHTML(){
+  const s=S.pro; const rev=docReviews(s.name);
+  const avg=rev.length?(rev.reduce((a,b)=>a+b.stars,0)/rev.length):null;
+  const badge={in_verifica:['⏳ In verifica','#8a5a08','#fff4e0'],verificato:['✔️ Verificato','var(--green-d)','var(--mint)'],manuale:['📄 Documenti richiesti','#245a9e','#e8f1ff']}[s.status];
+  return `<button class="back" onclick="go('profilo')">← Profilo</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Il tuo profilo pro</div><div class="n">🎓 ${s.profession}</div></div></div>
+
+  <div class="card" style="text-align:center">
+    <div class="ph" style="width:70px;height:70px;margin:0 auto 10px;font-size:32px">${s.ic}</div>
+    <div style="font-size:19px;font-weight:800">${s.name} ${s.status==='verificato'?'<span style="color:var(--green-d)">✔️</span>':''}</div>
+    <div class="sub">${s.profession} · ${s.reg||''}</div>
+    <div style="display:inline-block;margin-top:10px;padding:6px 14px;border-radius:20px;font-weight:800;font-size:12.5px;color:${badge[1]};background:${badge[2]}">${badge[0]}</div>
+    <div class="grid3" style="margin-top:16px">
+      <div><div style="font-size:20px;font-weight:800">${avg?avg.toFixed(1):'—'}</div><div class="sub" style="font-size:11px">★ voto</div></div>
+      <div><div style="font-size:20px;font-weight:800">${rev.length}</div><div class="sub" style="font-size:11px">recensioni</div></div>
+      <div><div style="font-size:20px;font-weight:800">${fmt(s.followers||0)}</div><div class="sub" style="font-size:11px">follower</div></div>
+    </div>
+  </div>
+
+  ${s.status==='in_verifica'?`<div class="card"><div class="h">🔎 Verifica in corso</div><div class="sub">Stiamo controllando i tuoi titoli e l'iscrizione a <b>${s.ente}</b>. Di solito richiede poco. Ti avviseremo appena sei attivo.</div><div class="bar" style="height:8px;margin-top:12px"><i style="width:60%;background:var(--amber)"></i></div></div>`:''}
+  ${s.status==='verificato'?`<div class="alert ok"><span>🎉</span><div><b>Sei verificato e attivo!</b> Compari tra i professionisti in "Prenota", gli utenti possono seguirti, prenotarti e lasciarti recensioni.</div></div>`:''}
+  ${s.status==='manuale'?`<div class="alert info"><span>📄</span><div>Non abbiamo potuto confermare automaticamente. Ricontrolla il numero d'albo e ricarica un documento leggibile, poi reinvia.</div></div>`:''}
+
+  <div class="card">
+    <div class="h">🎓 Credenziali</div>
+    <div class="row"><div class="rt"><b>Titolo</b><small>${s.title}</small></div></div>
+    <div class="row"><div class="rt"><b>Università</b><small>${s.uni||'—'} ${s.year?'· '+s.year:''}</small></div></div>
+    <div class="row"><div class="rt"><b>${s.ente}</b><small>N. albo: ${s.albo||'—'} · ${s.reg||'—'}</small></div><div class="rv">${s.status==='verificato'?'<span style="color:var(--green-d)">✔️</span>':'⏳'}</div></div>
+    ${s.cert?`<div style="margin-top:10px"><img src="${s.cert}" style="max-height:120px;border-radius:12px"></div>`:''}
+  </div>
+
+  <div class="card">
+    <div class="h">⭐ Recensioni ricevute</div>
+    ${rev.length?rev.map(r=>`<div class="row"><div class="rt"><b style="color:var(--amber)">${stars(r.stars)}</b><small>${r.txt||''} — ${r.by||'utente'}</small></div></div>`).join(''):'<div class="sub">Ancora nessuna recensione. Arriveranno dagli utenti che ti prenotano.</div>'}
+  </div>
+
+  <div class="grid2">
+    <button class="btn sec sm" onclick="go('prenota')">Vedi come appari</button>
+    <button class="btn sm" style="background:var(--coral);box-shadow:none" onclick="if(confirm('Ritirare il profilo professionista?')){S.pro=null;save();rebuild('pro');rebuild('prenota');go('profilo');toast('Profilo pro rimosso');}">Ritira profilo</button>
+  </div>`;
+}
+
+/* ---------- CLOUD / ACCOUNT ---------- */
+function cloudHTML(){
+  const cfg=cloudCfg();
+  const libOk=!!window.supabase;
+  if(!cfg||!cfg.url||!cfg.key){
+    return `<button class="back" onclick="go('profilo')">← Profilo</button>
+    <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Modalità reale</div><div class="n">☁️ Attiva il cloud</div></div></div>
+    <div class="alert info"><span>🚀</span><div>Collega Auréa a un backend gratuito (Supabase) per avere <b>account veri, dati sincronizzati e video caricabili</b> da ogni utente. ${libOk?'':'⚠️ Libreria cloud non ancora caricata: apri l\'app online (non da anteprima).'}</div></div>
+    <div class="card">
+      <div class="h">1️⃣ Crea il progetto</div>
+      <div class="sub">Vai su <b>supabase.com</b> → New project (gratis). Poi apri <b>SQL Editor</b> e incolla lo script che ti ho dato (crea tabelle e cartella video). Infine <b>Storage</b> → crea un bucket pubblico chiamato <b>videos</b>.</div>
+    </div>
+    <div class="card">
+      <div class="h">2️⃣ Incolla le 2 chiavi</div>
+      <div class="sub" style="margin-bottom:10px">In Supabase: <b>Project Settings → API</b>. Copia "Project URL" e "anon public key".</div>
+      <div class="field"><label>Project URL</label><input id="cl-url" placeholder="https://xxxx.supabase.co"></div>
+      <div class="field"><label>anon public key</label><input id="cl-key" placeholder="eyJhbGci..."></div>
+      <button class="btn" onclick="saveCloudCfg()">Attiva modalità reale</button>
+    </div>
+    <div class="tiny">Le chiavi restano sul tuo dispositivo. La "anon key" è pubblica per progetto: la sicurezza è garantita dalle regole (RLS) dello script.</div>`;
+  }
+  if(!loggedIn()){
+    return `<button class="back" onclick="go('profilo')">← Profilo</button>
+    <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Cloud attivo ✓</div><div class="n">👤 Accedi</div></div></div>
+    <div class="card">
+      <div class="field"><label>Email</label><input id="cl-email" type="email" placeholder="tuamail@esempio.com"></div>
+      <div class="field"><label>Password</label><input id="cl-pass" type="password" placeholder="min 6 caratteri"></div>
+      <button class="btn" onclick="doSignIn()">Accedi</button>
+      <button class="btn sec" style="margin-top:10px" onclick="doSignUp()">Crea un nuovo account</button>
+    </div>
+    <button class="btn sec sm" onclick="if(confirm('Rimuovere la configurazione cloud?')){localStorage.removeItem('aurea_cloud');SB=null;rebuild('cloud');go('cloud');}">Cambia configurazione</button>`;
+  }
+  return `<button class="back" onclick="go('profilo')">← Profilo</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Modalità reale attiva ✓</div><div class="n">☁️ Il tuo account</div></div></div>
+  <div class="alert ok"><span>✅</span><div><b>Sei online come ${cloudUser.email}.</b> I tuoi dati sono salvati nel cloud e sincronizzati tra i dispositivi. Ora puoi caricare video reali nella Community.</div></div>
+  <div class="card">
+    <div class="row"><div class="ri" style="background:var(--mint)">📧</div><div class="rt"><b>${cloudUser.email}</b><small>account cloud</small></div></div>
+    <div class="row"><div class="ri" style="background:var(--mint)">🔄</div><div class="rt"><b>Sincronizzazione</b><small>attiva automaticamente</small></div><div class="rv" style="color:var(--green-d)">ON</div></div>
+  </div>
+  <button class="btn sec" onclick="doSignOut()">Esci dall'account</button>`;
+}
+function saveCloudCfg(){
+  const url=(document.getElementById('cl-url').value||'').trim().replace(/\/$/,'');
+  const key=(document.getElementById('cl-key').value||'').trim();
+  if(!/^https:\/\/.+\.supabase\.co$/.test(url)){toast('URL non valido (deve finire con .supabase.co)');return;}
+  if(key.length<20){toast('anon key non valida');return;}
+  localStorage.setItem('aurea_cloud',JSON.stringify({url,key}));
+  if(cloudInit()){ toast('Cloud attivato! Ora accedi.'); } else { toast('Libreria non caricata: apri l\'app online'); }
+  rebuild('cloud'); go('cloud');
+}
+async function doSignUp(){
+  const e=(document.getElementById('cl-email').value||'').trim(), p=(document.getElementById('cl-pass').value||'');
+  if(!e||p.length<6){toast('Email valida e password ≥6 caratteri');return;}
+  toast('Creazione account…');
+  try{ await cloudSignUp(e,p);
+    // porta i dati locali sul cloud al primo accesso
+    if(cloudUser){ await cloudSaveProfile(); }
+    toast('Account creato! Controlla l\'email se richiesto, poi accedi.'); rebuild('cloud'); go('cloud');
+  }catch(err){ toast('Errore: '+(err.message||err)); }
+}
+async function doSignIn(){
+  const e=(document.getElementById('cl-email').value||'').trim(), p=(document.getElementById('cl-pass').value||'');
+  if(!e||!p){toast('Inserisci email e password');return;}
+  toast('Accesso…');
+  try{ await cloudSignIn(e,p); rebuildAll(); go('home'); toast('Bentornata '+(S.user.name||'')+'! ☁️'); }
+  catch(err){ toast('Accesso fallito: '+(err.message||err)); }
+}
+async function doSignOut(){ await cloudSignOut(); rebuild('cloud'); go('cloud'); toast('Uscita effettuata'); }
+
 /* ============ BUILD ============ */
 const BUILDERS={
   home:homeHTML, diario:diarioHTML, scanner:scannerHTML, piano:planHTML,
@@ -1973,7 +2482,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -1984,18 +2493,20 @@ function afterRender(id){
   if(id==='shop'){renderCartBadge();const b=document.getElementById('shopcart');if(b){const c=cartCount();b.style.display=c?'flex':'none';b.textContent=c;}}
   if(id==='promemoria'){renderReminders();}
   if(id==='planning'){renderPlanBody('cal');}
-  if(id==='community'){renderComBody('feed');}
+  if(id==='community'){renderComBody('perte');}
   if(id==='storia'){renderIntol();}
   if(id==='digiuno'){fastStatus();}
 }
 function boot(){
   restore();
+  cloudInit();
   Object.keys(BUILDERS).forEach(id=>screen(id, BUILDERS[id]()));
   renderNav(); renderMenu();
   Object.keys(BUILDERS).forEach(afterRender);
   go('home');
   save();
   if(!S.setup) showOnboard();
+  if(cloudOn()){ cloudCheckSession().then(u=>{ if(u){ hideOnboard(); rebuildAll(); go('home'); } }); }
   // clock
   function tick(){const el=document.getElementById('clock');if(el)el.textContent=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');
     if(S.fasting && document.getElementById('sc-digiuno') && document.getElementById('sc-digiuno').classList.contains('active')) fastStatus();}
