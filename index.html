@@ -885,7 +885,9 @@ function modalSheet(inner){
   box.innerHTML=`<div class="app-modal-card" style="background:#fff;width:100%;border-radius:24px 24px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:90%;overflow-y:auto">${inner}</div>`;
   box.onclick=(ev)=>{ if(ev.target===box)box.remove(); };
   const ed=document.getElementById('editor');
-  const host=(ed&&ed.classList.contains('open'))?ed:(document.querySelector('.screen.active')||document.getElementById('authwall')||document.body);
+  // ancorare alla cornice del telefono (non alla schermata che scorre): così il modale
+  // resta sempre visibile anche se la pagina è scrollata in basso
+  const host=(ed&&ed.classList.contains('open'))?ed:(document.querySelector('.phone')||document.body);
   host.appendChild(box);
   return box;
 }
@@ -1149,7 +1151,7 @@ function openSlider(o){
     <button class="btn sec sm" style="margin-top:8px" onclick="closeSlider()">Annulla</button>
   </div>`;
   box.onclick=(ev)=>{ if(ev.target===box)closeSlider(); };
-  (document.querySelector('.screen.active')||document.body).appendChild(box);
+  (document.querySelector('.phone')||document.body).appendChild(box);
 }
 function closeSlider(){ const b=document.getElementById('slider-panel'); if(b)b.remove(); }
 function setWaterHome(){ openSlider({title:"Bicchieri d'acqua oggi",min:0,max:20,step:1,value:S.water||0,unit:' bicchieri',onSet:function(n){ S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); }}); }
@@ -1902,7 +1904,7 @@ function drawBooking(){
   </div>`;
   box.onclick=(ev)=>{ if(ev.target===box)closeBooking(); };
   const old=document.getElementById('book-panel'); if(old)old.remove();
-  (document.querySelector('.screen.active')||document.body).appendChild(box);
+  (document.querySelector('.phone')||document.body).appendChild(box);
 }
 function pickBookDate(date){ S._bk.date=date; drawBooking(); }
 function closeBooking(){ const b=document.getElementById('book-panel'); if(b)b.remove(); S._bk=null; }
