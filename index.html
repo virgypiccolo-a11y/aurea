@@ -589,13 +589,14 @@ function exportMyData(){
 }
 // diritto di revoca del consenso ai dati sanitari
 function revokeHealthConsent(){
-  if(!confirm('Revocare il consenso al trattamento dei dati sulla salute? I piani e i consigli personalizzati verranno limitati.'))return;
-  S.consent=S.consent||{}; S.consent.health=false; S.consent.revokedAt=new Date().toISOString();
-  cloudLogConsent('health_revoked'); save(); toast('Consenso ai dati sanitari revocato'); rebuild('privacy'); go('privacy');
+  confirmBox('Revocare il consenso al trattamento dei dati sulla salute? I piani e i consigli personalizzati verranno limitati.',()=>{
+    S.consent=S.consent||{}; S.consent.health=false; S.consent.revokedAt=new Date().toISOString();
+    cloudLogConsent('health_revoked'); save(); toast('Consenso ai dati sanitari revocato'); rebuild('privacy'); go('privacy');
+  },{icon:'🚫',yes:'Revoca',danger:true});
 }
 // diritto all'oblio: cancella account e dati
-async function deleteMyAccount(){
-  if(!confirm('Eliminare DEFINITIVAMENTE il tuo account e tutti i tuoi dati? L\'operazione è irreversibile.'))return;
+function deleteMyAccount(){ confirmBox('Eliminare DEFINITIVAMENTE il tuo account e tutti i tuoi dati? L\'operazione è irreversibile.',_deleteMyAccount,{icon:'🗑️',yes:'Elimina tutto',danger:true}); }
+async function _deleteMyAccount(){
   if(cloudOn()&&loggedIn()){
     toast('Cancellazione in corso…');
     try{
@@ -813,7 +814,7 @@ function logWorkoutDone(name,baseK,minutes){
 }
 function rmWorkoutDone(i){ const l=S.workoutLog||[]; const it=l[i]; if(!it)return; S.workoutKcal=Math.max(0,(S.workoutKcal||0)-(it.kcal||0)); l.splice(i,1); save(); rebuild('home'); rebuild('allenamento'); toast('Allenamento rimosso · calorie ricalcolate'); }
 function resetBurned(){ S.workoutKcal=0; S.workoutLog=[]; save(); rebuild('home'); rebuild('allenamento'); toast('Calorie allenamento azzerate'); }
-function workoutDoneMinutes(name){ const m=parseInt(prompt('Quanti minuti è durato "'+name+'"?','30')); if(isNaN(m)||m<=0){toast('Durata non valida');return;} logWorkoutDone(name,0,m); }
+function workoutDoneMinutes(name){ openForm({title:'Allenamento completato',subtitle:name,fields:[{id:'m',label:'Quanti minuti è durato?',type:'number',value:'30'}],submit:'Salva',onSubmit:(v)=>{ const m=parseInt(v.m); if(isNaN(m)||m<=0){toast('Durata non valida');return false;} logWorkoutDone(name,0,m); }}); }
 
 /* ============ AI VISION reale (Claude) ============ */
 async function callVision(img,prompt){
@@ -841,17 +842,106 @@ function saveAiKey(){
 }
 
 /* ============ NAV ============ */
+/* ===== ICONE STILIZZATE (SVG line-art) ===== */
+const ICONS={
+ home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/>',
+ piano:'<path d="M12 8c-2.8 0-5 1.9-5 5.6S9 21 12 21s5-3.7 5-7.4S14.8 8 12 8z"/><path d="M12 8c0-2.4 1.8-4 4-4 0 2.6-1.6 4-4 4z"/>',
+ calendar:'<rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/>',
+ heart:'<path d="M12 20s-7-4.5-7-9.6A3.8 3.8 0 0 1 12 7a3.8 3.8 0 0 1 7 3.4C19 15.5 12 20 12 20z"/>',
+ menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+ user:'<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6"/>',
+ book:'<path d="M5 5a2 2 0 0 1 2-2h11v15H7a2 2 0 0 0-2 2z"/><path d="M18 18H7"/>',
+ camera:'<rect x="3.5" y="7" width="17" height="12" rx="2.5"/><circle cx="12" cy="13" r="3"/><path d="M8 7l1.4-2.5h5.2L16 7"/>',
+ robot:'<rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 8V5M9 13h.01M15 13h.01M4 12v3M20 12v3"/><circle cx="12" cy="4" r="1"/>',
+ fridge:'<rect x="6" y="3" width="12" height="18" rx="2.4"/><path d="M6 10.5h12M9.2 6.2v2M9.2 13v3"/>',
+ flower:'<circle cx="12" cy="12" r="2.4"/><path d="M12 3c2.2 1.8 2.2 4.8 0 6.6M12 21c-2.2-1.8-2.2-4.8 0-6.6M3 12c1.8-2.2 4.8-2.2 6.6 0M21 12c-1.8 2.2-4.8 2.2-6.6 0"/>',
+ users:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.1 2.7-5 6-5s6 1.9 6 5"/><path d="M16 5.6a3 3 0 0 1 0 5.8M21 20c0-2.6-1.7-4.4-4-4.9"/>',
+ bag:'<path d="M6.5 8h11l-1 11.5H7.5z"/><path d="M9.2 8V6.4a2.8 2.8 0 0 1 5.6 0V8"/>',
+ dumbbell:'<path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/>',
+ bell:'<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.8 1.8H4.2z"/><path d="M10 20.2a2 2 0 0 0 4 0"/>',
+ drop:'<path d="M12 3.5s6 6.3 6 10.2a6 6 0 0 1-12 0C6 9.8 12 3.5 12 3.5z"/>',
+ steps:'<path d="M7.5 4.5c1.4 0 2.3 1.4 2.3 3.4S9 14 7.5 14 5.2 12 5.2 9.5 6.1 4.5 7.5 4.5z"/><path d="M16.5 10c1.4 0 2.3 1.4 2.3 3.4S18 19.5 16.5 19.5 14.2 17.5 14.2 15 15.1 10 16.5 10z"/>',
+ moon:'<path d="M20 14.6A8 8 0 1 1 9.4 4 6.5 6.5 0 0 0 20 14.6z"/>',
+ flame:'<path d="M12 3.5c1.2 3 4 4.2 4 7.8a4 4 0 0 1-8 0c0-1.4.5-2.4 1.4-3.3C11 6.8 12 5.4 12 3.5z"/>',
+ sparkle:'<path d="M12 4l1.6 4.8L18 10l-4.4 1.4L12 16l-1.6-4.6L6 10l4.4-1.2z"/>',
+ rainbow:'<path d="M4 18a8 8 0 0 1 16 0"/><path d="M7.5 18a4.5 4.5 0 0 1 9 0"/><path d="M11 18a1 1 0 0 1 2 0"/>',
+ cup:'<path d="M6 8h12l-1.2 9.2A2.8 2.8 0 0 1 14 19.6h-4a2.8 2.8 0 0 1-2.8-2.4z"/><path d="M18 10.2h1.4a2 2 0 0 1 0 4H17.6"/>',
+ hourglass:'<path d="M6.5 3h11M6.5 21h11M8 3v3.2l4 4-4 4V21M16 3v3.2l-4 4 4 4V21"/>',
+ clipboard:'<rect x="6" y="4.5" width="12" height="16.5" rx="2.4"/><path d="M9 4.5V3.5h6v1M9.5 10.5h5M9.5 14.5h5"/>',
+ cross:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>',
+ cloud:'<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.4A3.5 3.5 0 0 1 18 18z"/>',
+ cart:'<circle cx="9.5" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M4 5h2l2 11h10l2-8H7"/>',
+ grid:'<rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/>',
+ shield:'<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/>',
+ lock:'<rect x="5.5" y="10.5" width="13" height="9" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+ box:'<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'
+};
+function ic(name,size){ size=size||22; const p=ICONS[name]||ICONS.grid; return `<svg class="ico-svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block">${p}</svg>`; }
+
+/* ===== FINESTRE MODALI (al posto dei prompt del browser) ===== */
+function modalSheet(inner){
+  const box=document.createElement('div'); box.className='app-modal'; box.style.cssText='position:absolute;inset:0;z-index:200;background:rgba(20,18,16,.5);display:flex;align-items:flex-end';
+  box.innerHTML=`<div class="app-modal-card" style="background:#fff;width:100%;border-radius:24px 24px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:90%;overflow-y:auto">${inner}</div>`;
+  box.onclick=(ev)=>{ if(ev.target===box)box.remove(); };
+  const ed=document.getElementById('editor');
+  const host=(ed&&ed.classList.contains('open'))?ed:(document.querySelector('.screen.active')||document.getElementById('authwall')||document.body);
+  host.appendChild(box);
+  return box;
+}
+function openForm(o){
+  const fields=o.fields||[];
+  const rows=fields.map(f=>{
+    if(f.type==='photo'){
+      return `<div class="field"><label>${f.label}</label>
+        <div id="ff-photo-wrap-${f.id}" style="display:flex;gap:10px;align-items:center">
+          <div id="ff-photo-${f.id}" style="width:64px;height:64px;border-radius:14px;background:var(--mint);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:24px">📷</div>
+          <button type="button" class="btn sm sec" style="width:auto;padding:9px 14px" onclick="ffPickPhoto('${f.id}')">Scegli foto</button>
+        </div></div>`;
+    }
+    if(f.type==='textarea') return `<div class="field"><label>${f.label}</label><textarea id="ff-${f.id}" rows="3" style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:none" placeholder="${f.ph||''}">${f.value||''}</textarea></div>`;
+    if(f.type==='select') return `<div class="field"><label>${f.label}</label><select id="ff-${f.id}" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;font-size:14px">${(f.options||[]).map(op=>`<option ${op===f.value?'selected':''}>${op}</option>`).join('')}</select></div>`;
+    const t=f.type||'text';
+    return `<div class="field"><label>${f.label}</label><input id="ff-${f.id}" type="${t}" ${t==='number'?'inputmode="decimal"':''} value="${(f.value!=null?String(f.value).replace(/"/g,'&quot;'):'')}" placeholder="${f.ph||''}"></div>`;
+  }).join('');
+  _ffPhotos={};
+  const box=modalSheet(`<div class="grab"></div>
+    <h3 style="margin:0 0 4px;text-align:center;font-size:17px">${o.title||''}</h3>
+    ${o.subtitle?`<div class="sub" style="text-align:center;margin-bottom:12px">${o.subtitle}</div>`:'<div style="height:8px"></div>'}
+    ${rows}
+    <button class="btn" style="margin-top:8px" id="ff-submit">${o.submit||'Conferma'}</button>
+    <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Annulla</button>`);
+  box.querySelector('#ff-submit').onclick=()=>{
+    const vals={};
+    fields.forEach(f=>{ if(f.type==='photo'){ vals[f.id]=_ffPhotos[f.id]||null; } else { const el=box.querySelector('#ff-'+f.id); vals[f.id]=el?el.value:''; } });
+    const ok=o.onSubmit(vals);
+    if(ok!==false) box.remove();
+  };
+  return box;
+}
+let _ffPhotos={};
+function ffPickPhoto(id){ fileFallback((url)=>{ _ffPhotos[id]=url; const d=document.getElementById('ff-photo-'+id); if(d)d.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover">`; },'image/*'); }
+function confirmBox(msg,onYes,opts){
+  opts=opts||{};
+  const box=modalSheet(`<div class="grab"></div>
+    <div style="text-align:center;font-size:34px;margin:4px 0">${opts.icon||'❓'}</div>
+    <div class="sub" style="text-align:center;margin-bottom:16px;font-size:14px;color:var(--ink)">${msg}</div>
+    <button class="btn" id="cb-yes" style="${opts.danger?'background:var(--coral);box-shadow:none':''}">${opts.yes||'Conferma'}</button>
+    <button class="btn sec sm" style="margin-top:8px" id="cb-no">${opts.no||'Annulla'}</button>`);
+  box.querySelector('#cb-yes').onclick=()=>{ box.remove(); onYes&&onYes(); };
+  box.querySelector('#cb-no').onclick=()=>box.remove();
+}
 const NAV=[
-  {id:'home',ic:'🏠',l:'Home'},
-  {id:'piano',ic:'🥗',l:'Piano'},
-  {id:'planning',ic:'📆',l:'Calendario'},
-  {id:'benessere',ic:'💚',l:'Benessere'},
-  {id:'menu',ic:'☰',l:'Menu',menu:true},
-  {id:'profilo',ic:'👤',l:'Profilo'}
+  {id:'home',icn:'home',l:'Home'},
+  {id:'piano',icn:'piano',l:'Piano'},
+  {id:'planning',icn:'calendar',l:'Calendario'},
+  {id:'benessere',icn:'heart',l:'Benessere'},
+  {id:'menu',icn:'menu',l:'Menu',menu:true},
+  {id:'profilo',icn:'user',l:'Profilo'}
 ];
 function renderNav(){
   document.getElementById('nav').innerHTML=NAV.map(n=>
-    `<button data-t="${n.id}" onclick="${n.menu?'openMenu()':`go('${n.id}')`}"><span class="ni">${n.ic}</span>${n.l}</button>`
+    `<button data-t="${n.id}" onclick="${n.menu?'openMenu()':`go('${n.id}')`}"><span class="ni">${ic(n.icn,23)}</span>${n.l}</button>`
   ).join('');
 }
 function renderCartBadge(){
@@ -860,28 +950,28 @@ function renderCartBadge(){
 }
 /* menu con tutte le funzioni */
 const MENU=[
-  {id:'community',ic:'👥',l:'Community'},
-  {id:'ciclo',ic:'🌸',l:'Ciclo',fem:true},
-  {id:'recupero',ic:'🌈',l:'Recupero'},
-  {id:'detox',ic:'🥤',l:'Detox'},
-  {id:'digiuno',ic:'⏳',l:'Digiuno'},
-  {id:'storia',ic:'📋',l:'Storia clinica'},
-  {id:'diario',ic:'📔',l:'Diario'},
-  {id:'scanner',ic:'📷',l:'Scanner'},
-  {id:'frigo',ic:'🧊',l:'Frigo'},
-  {id:'shop',ic:'🛍️',l:'Integratori'},
-  {id:'carrello',ic:'🛒',l:'Carrello'},
-  {id:'prenota',ic:'🩺',l:'Prenota'},
-  {id:'coach',ic:'🤖',l:'Coach AI'},
-  {id:'allenamento',ic:'🏋️',l:'Workout'},
-  {id:'promemoria',ic:'⏰',l:'Promemoria'},
-  {id:'pro',ic:'🎓',l:'Professionisti'},
-  {id:'cloud',ic:'☁️',l:'Cloud'}
+  {id:'community',icn:'users',l:'Community'},
+  {id:'ciclo',icn:'flower',l:'Ciclo',fem:true},
+  {id:'recupero',icn:'rainbow',l:'Recupero'},
+  {id:'detox',icn:'cup',l:'Detox'},
+  {id:'digiuno',icn:'hourglass',l:'Digiuno'},
+  {id:'storia',icn:'clipboard',l:'Storia clinica'},
+  {id:'diario',icn:'book',l:'Diario'},
+  {id:'scanner',icn:'camera',l:'Scanner'},
+  {id:'frigo',icn:'fridge',l:'Frigo'},
+  {id:'shop',icn:'bag',l:'Integratori'},
+  {id:'carrello',icn:'cart',l:'Carrello'},
+  {id:'prenota',icn:'cross',l:'Prenota'},
+  {id:'coach',icn:'robot',l:'Coach AI'},
+  {id:'allenamento',icn:'dumbbell',l:'Workout'},
+  {id:'promemoria',icn:'bell',l:'Promemoria'},
+  {id:'pro',icn:'shield',l:'Professionisti'},
+  {id:'cloud',icn:'cloud',l:'Cloud'}
 ];
 function renderMenu(){
   const g=document.getElementById('menu-grid'); if(!g)return;
   g.innerHTML=MENU.filter(m=>!(m.fem&&!cycleOn())).map(m=>
-    `<button class="qa" onclick="menuGo('${m.id}')"><span class="qi" style="background:var(--mint)">${m.ic}</span>${m.l}</button>`
+    `<button class="qa" onclick="menuGo('${m.id}')"><span class="qi" style="background:var(--mint);color:var(--green-d)">${ic(m.icn,24)}</span>${m.l}</button>`
   ).join('');
 }
 function openMenu(){renderMenu();document.getElementById('menu-sheet').classList.add('open');}
@@ -899,7 +989,7 @@ function homeHTML(){
   const kc=S.intake.kcal, kg=S.user.kcalGoal, left=kg-kc+burned;
   return `
   <div class="topbar">
-    <div class="hello"><div class="k">Domenica, 19 luglio</div><div class="n">Ciao, ${S.user.name} 👋</div></div>
+    <div class="hello"><div class="k">Domenica, 19 luglio</div><div class="n">Ciao, ${S.user.name} <span style="color:var(--amber);vertical-align:-3px;display:inline-block">${ic('sparkle',19)}</span></div></div>
     <div class="avatar" onclick="go('profilo')">${S.user.initials}</div>
   </div>
 
@@ -917,11 +1007,11 @@ function homeHTML(){
   </div>
 
   <div class="grid3" style="margin-bottom:${S.stepsConnected?'16px':'8px'}">
-    <div class="stat" onclick="setStepsManual()" style="cursor:pointer"><div class="ico" style="background:#e8f1ff;color:var(--blue)">👟</div><div class="v" id="steps-val">${((S.steps||0)/1000).toFixed(1)}k</div><div class="l">Passi · tocca</div></div>
-    <div class="stat" onclick="setWaterHome()" style="cursor:pointer"><div class="ico" style="background:#e8f6ff;color:#2a9adf">💧</div><div class="v">${S.water}/${S.waterGoal}</div><div class="l">Acqua · tocca</div></div>
-    <div class="stat" onclick="setSleep()" style="cursor:pointer"><div class="ico" style="background:var(--violet-s);color:var(--violet)">😴</div><div class="v">${S.sleep?S.sleep+'h':'—'}</div><div class="l">Sonno · tocca</div></div>
+    <div class="stat" onclick="setStepsManual()" style="cursor:pointer"><div class="ico" style="background:#e8f1ff;color:var(--blue)">${ic('steps',20)}</div><div class="v" id="steps-val">${((S.steps||0)/1000).toFixed(1)}k</div><div class="l">Passi · tocca</div></div>
+    <div class="stat" onclick="setWaterHome()" style="cursor:pointer"><div class="ico" style="background:#e8f6ff;color:#2a9adf">${ic('drop',20)}</div><div class="v">${S.water}/${S.waterGoal}</div><div class="l">Acqua · tocca</div></div>
+    <div class="stat" onclick="setSleep()" style="cursor:pointer"><div class="ico" style="background:var(--violet-s);color:var(--violet)">${ic('moon',20)}</div><div class="v">${S.sleep?S.sleep+'h':'—'}</div><div class="l">Sonno · tocca</div></div>
   </div>
-  ${S.stepsConnected?'':`<button class="btn ghost sm" style="margin-bottom:16px" onclick="connectSteps()">👟 Connetti il contapassi automatico</button>`}
+  ${S.stepsConnected?'':`<button class="btn ghost sm" style="margin-bottom:16px" onclick="connectSteps()"><span style="vertical-align:-4px;display:inline-block;margin-right:4px">${ic('steps',18)}</span> Connetti il contapassi automatico</button>`}
 
   <div class="section-title">Obiettivo peso <span class="more" onclick="go('piano')">Adatta piano</span></div>
   <div class="card">
@@ -937,18 +1027,18 @@ function homeHTML(){
 
   <div class="section-title">Accesso rapido</div>
   <div class="quick" style="margin-bottom:8px">
-    <button class="qa" onclick="go('diario')"><span class="qi" style="background:var(--mint)">📔</span>Diario</button>
-    <button class="qa" onclick="go('scanner')"><span class="qi" style="background:#e8f1ff">📷</span>Scanner</button>
-    <button class="qa" onclick="go('coach')"><span class="qi" style="background:var(--violet-s)">🤖</span>Coach AI</button>
-    <button class="qa" onclick="go('frigo')"><span class="qi" style="background:#e8f6ff">🧊</span>Frigo</button>
+    <button class="qa" onclick="go('diario')"><span class="qi" style="background:var(--mint);color:var(--green-d)">${ic('book',24)}</span>Diario</button>
+    <button class="qa" onclick="go('scanner')"><span class="qi" style="background:#e8f1ff;color:var(--blue)">${ic('camera',24)}</span>Scanner</button>
+    <button class="qa" onclick="go('coach')"><span class="qi" style="background:var(--violet-s);color:var(--violet)">${ic('robot',24)}</span>Coach AI</button>
+    <button class="qa" onclick="go('frigo')"><span class="qi" style="background:#e8f6ff;color:#2a9adf">${ic('fridge',24)}</span>Frigo</button>
   </div>
   <div class="quick">
-    ${cycleOn()?`<button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s)">🌸</span>Ciclo</button>`:`<button class="qa" onclick="go('allenamento')"><span class="qi" style="background:var(--coral-s)">💪</span>Forma</button>`}
-    <button class="qa" onclick="go('community')"><span class="qi" style="background:#fff0e0">👥</span>Community</button>
-    <button class="qa" onclick="go('shop')"><span class="qi" style="background:var(--mint)">💊</span>Integr.</button>
-    <button class="qa" onclick="openMenu()"><span class="qi" style="background:var(--violet-s)">☰</span>Tutto</button>
+    ${cycleOn()?`<button class="qa" onclick="go('ciclo')"><span class="qi" style="background:var(--coral-s);color:var(--coral)">${ic('flower',24)}</span>Ciclo</button>`:`<button class="qa" onclick="go('allenamento')"><span class="qi" style="background:var(--coral-s);color:var(--coral)">${ic('dumbbell',24)}</span>Forma</button>`}
+    <button class="qa" onclick="go('community')"><span class="qi" style="background:#fff0e0;color:#c8781f">${ic('users',24)}</span>Community</button>
+    <button class="qa" onclick="go('shop')"><span class="qi" style="background:var(--mint);color:var(--green-d)">${ic('bag',24)}</span>Integr.</button>
+    <button class="qa" onclick="openMenu()"><span class="qi" style="background:var(--violet-s);color:var(--violet)">${ic('grid',24)}</span>Tutto</button>
   </div>
-  <div class="tiny" style="margin-top:8px">Trovi tutte le funzioni nel Menu ☰ in basso.</div>
+  <div class="tiny" style="margin-top:8px">Trovi tutte le funzioni nel Menu in basso.</div>
 
   <div class="section-title">Prossimi appuntamenti <span class="more" onclick="go('prenota')">Vedi tutti</span></div>
   <div class="card tight" id="home-appts"></div>
@@ -962,24 +1052,29 @@ function homeHTML(){
   <div class="section-title">Il tuo oggi <span class="more" onclick="go('planning')">Planning →</span></div>
   <div class="card tight">
     <div class="row" onclick="go('planning')" style="cursor:pointer;padding:8px 0">
-      <div class="ri" style="background:#e8f1ff">📆</div>
+      <div class="ri" style="background:#e8f1ff;color:var(--blue)">${ic('calendar',22)}</div>
       <div class="rt"><b>${S.today.filter(x=>x.done).length}/${S.today.length} attività completate</b><small>pasti, integratori, workout e appuntamenti</small></div>
       <div class="rv">›</div>
     </div>
     <div class="row" onclick="go('benessere')" style="cursor:pointer;padding:8px 0">
-      <div class="ri" style="background:var(--mint)">💚</div>
+      <div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('heart',22)}</div>
       <div class="rt"><b>Come ti senti oggi?</b><small>Registra umore e pensieri</small></div>
       <div class="rv">›</div>
     </div>
+    <div class="row" onclick="setSleep()" style="cursor:pointer;padding:8px 0">
+      <div class="ri" style="background:var(--violet-s);color:var(--violet)">${ic('moon',22)}</div>
+      <div class="rt"><b>Sonno di stanotte: ${S.sleep?S.sleep+'h':'da registrare'}</b><small>${S.sleep?'tocca per modificare':'tocca per inserire le ore dormite'}</small></div>
+      <div class="rv">›</div>
+    </div>
     <div class="row" onclick="go('recupero')" style="cursor:pointer;padding:8px 0;border-bottom:none">
-      <div class="ri" style="background:var(--coral-s)">🌈</div>
+      <div class="ri" style="background:var(--coral-s);color:var(--coral)">${ic('rainbow',22)}</div>
       <div class="rt"><b>Hai sgarrato? Riparti qui</b><small>Supporto e piano per rimettersi in carreggiata</small></div>
       <div class="rv">›</div>
     </div>
   </div>
 
   <div class="section-title">Sonno & recupero</div>
-  ${sleepAdvice()}
+  <div onclick="setSleep()" style="cursor:pointer">${sleepAdvice()}</div>
 
   <div class="section-title">Consiglio del giorno</div>
   <div class="card">
@@ -1072,14 +1167,12 @@ function sleepAdvice(){
   ${suppRecoCard('Integratori per dormire meglio','In base al tuo sonno insufficiente:','sonno')}`;
 }
 function editWeight(){
-  const v=prompt('Peso di oggi (kg):', S.wNow);
-  if(v===null)return;
-  const n=parseFloat((''+v).replace(',','.'));
-  if(isNaN(n)||n<30||n>300){toast('Valore non valido');return;}
-  S.wNow=+n.toFixed(1); S.weight=S.wNow;
-  const wp=weightPlan();
-  rebuild('home');rebuild('piano');go('home');
-  toast('Peso aggiornato · piano ricalcolato: '+wp.kcal+' kcal');
+  openForm({title:'Aggiorna peso',subtitle:'Il piano si ricalcola in automatico',
+    fields:[{id:'w',label:'Peso di oggi (kg)',type:'number',value:S.wNow}],
+    submit:'Salva peso',
+    onSubmit:(v)=>{ const n=parseFloat((''+v.w).replace(',','.')); if(isNaN(n)||n<30||n>300){toast('Valore non valido');return false;}
+      S.wNow=+n.toFixed(1); S.weight=S.wNow; const wp=weightPlan(); rebuild('home');rebuild('piano');go('home'); toast('Peso aggiornato · piano: '+wp.kcal+' kcal'); }
+  });
 }
 /* Database alimenti singoli · kcal per 100 g (fonte: valori medi CREA/USDA) */
 const INGREDIENTS=[
@@ -1165,8 +1258,11 @@ function fAdd(id,name,pPer100){ const g=parseFloat((document.getElementById('g-'
   save(); toast('Aggiunto: '+name+' · '+Math.round(k)+' kcal'); rebuild('home');
   const gEl=document.getElementById('g-'+id); if(gEl)gEl.value=''; const kEl=document.getElementById('k-'+id); if(kEl)kEl.value='';
 }
-function fCustom(){ const f=prompt('Nome alimento:'); if(!f||!f.trim())return; const kv=prompt('Quante calorie (kcal)?','200'); const k=parseInt(kv); if(isNaN(k)){toast('Calorie non valide');return;}
-  S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:f.trim(),k}); S.intake.kcal+=k; save(); rebuild('home'); toast('Aggiunto: '+f.trim()+' · '+k+' kcal'); go('diario'); }
+function fCustom(){ openForm({title:'Alimento non in lista',
+  fields:[{id:'f',label:'Nome alimento'},{id:'k',label:'Calorie (kcal)',type:'number',value:'200'}],
+  submit:'Aggiungi al diario',
+  onSubmit:(v)=>{ if(!v.f||!v.f.trim()){toast('Inserisci il nome');return false;} const k=parseInt(v.k); if(isNaN(k)){toast('Calorie non valide');return false;}
+    S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:v.f.trim(),k}); S.intake.kcal+=k; save(); rebuild('home'); toast('Aggiunto: '+v.f.trim()+' · '+k+' kcal'); go('diario'); } }); }
 function rmFood(i){ if(i<0||!S.foodLog||!S.foodLog[i])return; const it=S.foodLog[i]; S.intake.kcal=Math.max(0,S.intake.kcal-(it.k||0)); S.intake.prot=Math.max(0,S.intake.prot-(it.prot||0)); S.foodLog.splice(i,1); save(); rebuild('diario'); rebuild('home'); toast('Rimosso'); }
 function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); save(); }
 
@@ -1246,7 +1342,7 @@ function scanEdit(i,field,val){ const it=_scanItems[i]; if(!it)return; const n=p
   if(field==='grams'){ const inp=document.querySelectorAll('#scan-res .row')[i]; if(inp){const ks=inp.querySelectorAll('input')[1]; if(ks)ks.value=it.kcal;} }
 }
 function scanDel(i){ _scanItems.splice(i,1); drawScanEditor(); }
-function scanAddRow(){ const f=prompt('Nome alimento:'); if(!f||!f.trim())return; _scanItems.push({food:f.trim(),emoji:'🍽️',grams:100,kcal:0,kpg:0,prot:0}); drawScanEditor(); }
+function scanAddRow(){ openForm({title:'Aggiungi un alimento',fields:[{id:'f',label:'Nome alimento'}],submit:'Aggiungi',onSubmit:(v)=>{ if(!v.f||!v.f.trim()){return false;} _scanItems.push({food:v.f.trim(),emoji:'🍽️',grams:100,kcal:0,kpg:0,prot:0}); drawScanEditor(); }}); }
 function saveScan(){ const names=_scanItems.map(it=>it.food).join(', ')||'Pasto'; const tot=_scanItems.reduce((a,b)=>a+(+b.kcal||0),0); const totP=_scanItems.reduce((a,b)=>a+(+b.prot||0),0); logMeal(names,Math.round(tot),Math.round(totP),'Pasto'); rebuild('home'); rebuild('diario'); toast('Pasto salvato nel diario'); go('diario'); }
 
 /* ---------- PIANO NUTRIZIONALE ---------- */
@@ -1817,8 +1913,8 @@ function confirmBooking(date,label,time){
   toast('Prenotato: '+bk.name+' · '+label+' '+time+' ('+mode+')');
 }
 function freeSlot(a){ if(a&&a.slot){ S.booked=(S.booked||[]).filter(x=>x!==a.slot); } }
-function cancelAppt(i){ const a=S.appointments[i]; if(!a)return; if(!confirm('Annullare l\'appuntamento con '+a.who+'?'))return;
-  freeSlot(a); S.appointments.splice(i,1); save(); renderMyAppts(); renderHomeAppts(); rebuild('home'); toast('Appuntamento annullato'); }
+function cancelAppt(i){ const a=S.appointments[i]; if(!a)return; confirmBox('Annullare l\'appuntamento con '+a.who+'?',()=>{
+  freeSlot(a); S.appointments.splice(i,1); save(); renderMyAppts(); renderHomeAppts(); rebuild('home'); toast('Appuntamento annullato'); },{icon:'📅',yes:'Annulla visita',danger:true,no:'Torna indietro'}); }
 function modifyAppt(i){ const a=S.appointments[i]; if(!a)return; freeSlot(a); const who=a.who,spec=a.spec,ic=a.ic; S.appointments.splice(i,1); save(); renderMyAppts(); renderHomeAppts(); openBooking(who,spec,ic); toast('Scegli un nuovo orario'); }
 function allDocs(){
   let list=CLOUD_DOCS.slice();
@@ -1855,12 +1951,13 @@ function renderDocs(filter){
     </div>`).join('');
 }
 function rateDoctor(name){
-  const sv=prompt('Che voto dai a '+name+'? (1-5 stelle)','5'); if(sv===null)return;
-  const st=Math.max(1,Math.min(5,parseInt(sv)||0)); if(!st){toast('Voto non valido');return;}
-  const tx=prompt('Lascia una recensione (facoltativa):','')||'';
-  S.docReviews=S.docReviews||{}; (S.docReviews[name]=S.docReviews[name]||[]).unshift({stars:st,txt:tx.trim(),by:S.user.name});
-  save(); renderDocs(document.querySelector('#spec-filter .chip.sel')?.textContent||'Tutti');
-  toast('Grazie! Recensione pubblicata ⭐'+st);
+  openForm({title:'Valuta '+name,
+    fields:[{id:'st',label:'Voto',type:'select',value:'5 ★★★★★',options:['5 ★★★★★','4 ★★★★','3 ★★★','2 ★★','1 ★']},{id:'tx',label:'Recensione (facoltativa)',type:'textarea',ph:'La tua esperienza…'}],
+    submit:'Pubblica recensione',
+    onSubmit:(v)=>{ const st=Math.max(1,Math.min(5,parseInt(v.st)||0)); if(!st){toast('Voto non valido');return false;}
+      S.docReviews=S.docReviews||{}; (S.docReviews[name]=S.docReviews[name]||[]).unshift({stars:st,txt:(v.tx||'').trim(),by:S.user.name});
+      save(); renderDocs(document.querySelector('#spec-filter .chip.sel')?.textContent||'Tutti'); toast('Grazie! Recensione pubblicata ⭐'+st); }
+  });
 }
 function filterDocs(s,btn){document.querySelectorAll('#spec-filter .chip').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');renderDocs(s);}
 function book(n,s,ic,when){ openBooking(n,s,ic); }
@@ -1871,12 +1968,29 @@ const PRODUCTS=[];
 let CLOUD_PRODUCTS=[], _prodLoaded=false, _prodFetching=false;
 async function cloudLoadProducts(){ if(!cloudOn()){CLOUD_PRODUCTS=[];return [];}
   try{ const {data,error}=await SB.from('products').select('*').order('created_at',{ascending:false}); if(error)throw error;
-    CLOUD_PRODUCTS=(data||[]).map(r=>({id:r.id,owner:r.owner_id,n:r.name,d:r.descr||'',p:+r.price,ic:r.icon||'💊',bg:r.bg||'var(--mint)',tag:r.tag||'',by:r.author||''}));
+    CLOUD_PRODUCTS=(data||[]).map(r=>({id:r.id,owner:r.owner_id,n:r.name,d:r.descr||'',p:+r.price,ic:r.icon||'💊',bg:r.bg||'var(--mint)',tag:r.tag||'',by:r.author||'',img:r.image||''}));
     return CLOUD_PRODUCTS; }catch(e){ return CLOUD_PRODUCTS; } }
-async function cloudAddProduct(o){ const row={owner_id:cloudUser.id,name:o.n,descr:o.d,price:o.p,icon:o.ic,bg:o.bg,tag:o.tag,author:o.by}; const {data,error}=await SB.from('products').insert(row).select().single(); if(error)throw error; return data; }
+async function cloudAddProduct(o){ const row={owner_id:cloudUser.id,name:o.n,descr:o.d,price:o.p,icon:o.ic,bg:o.bg,tag:o.tag,author:o.by,image:o.img||null};
+  let {data,error}=await SB.from('products').insert(row).select().single();
+  if(error&&/column/.test(error.message||'')){ delete row.image; const r2=await SB.from('products').insert(row).select().single(); data=r2.data; error=r2.error; }
+  if(error)throw error; return data; }
 async function cloudDeleteProduct(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('products').delete().eq('id',id); }catch(e){ return {error:e}; } }
 function allProducts(){ if(cloudOn()) return CLOUD_PRODUCTS.slice(); return (S.customProducts||[]); }
 function canSell(){ return !!(S.pro && S.pro.status==='verificato'); }
+// solo i PERSONAL TRAINER verificati possono caricare video di allenamento
+function canTrainer(){ return !!(S.pro && S.pro.status==='verificato' && /trainer|scienze motorie|coni/i.test((S.pro.profession||'')+' '+(S.pro.ente||''))); }
+let CLOUD_WORKOUTS=[], _wkLoaded=false, _wkFetching=false;
+async function cloudLoadWorkouts(){ if(!cloudOn()){CLOUD_WORKOUTS=[];return [];}
+  try{ const {data,error}=await SB.from('workouts').select('*').order('created_at',{ascending:false}); if(error)throw error;
+    CLOUD_WORKOUTS=(data||[]).map(r=>({id:r.id,owner:r.owner_id,n:r.name,d:r.descr||'',video:r.video_url,by:r.author||''}));
+    return CLOUD_WORKOUTS; }catch(e){ return CLOUD_WORKOUTS; } }
+async function cloudAddWorkout(o){ const row={owner_id:cloudUser.id,name:o.n,descr:o.d,video_url:o.video,author:o.by}; const {data,error}=await SB.from('workouts').insert(row).select().single(); if(error)throw error; return data; }
+async function cloudDeleteWorkout(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('workouts').delete().eq('id',id); }catch(e){ return {error:e}; } }
+function allWorkouts(){ return cloudOn()?CLOUD_WORKOUTS.slice():(S.customWorkouts||[]); }
+function deleteWorkout(id){ confirmBox('Eliminare questo video di allenamento?',async()=>{
+  if(cloudOn()){ const {error}=await cloudDeleteWorkout(id); if(error){toast('Non eliminato: '+(error.message||error));return;} _wkLoaded=false; await cloudLoadWorkouts(); _wkLoaded=true; }
+  else { S.customWorkouts=(S.customWorkouts||[]).filter(w=>w.id!==id); save(); }
+  rebuild('allenamento'); toast('Video eliminato'); },{icon:'🎬',yes:'Elimina',danger:true}); }
 function shopHTML(){
   const prods=allProducts(); const PAGE=8; const pages=Math.max(1,Math.ceil(prods.length/PAGE));
   const pg=Math.min(S.shopPage||0,pages-1); const slice=prods.slice(pg*PAGE,pg*PAGE+PAGE);
@@ -1890,7 +2004,7 @@ function shopHTML(){
     ${slice.map((p)=>{const gi=prods.indexOf(p);return `
       <div class="prod">
         ${p.tag?`<span class="tagbadge">${p.tag}</span>`:''}
-        <div class="pimg" style="background:${p.bg||'var(--mint)'}">${p.ic||'💊'}</div>
+        <div class="pimg" style="background:${p.bg||'var(--mint)'};overflow:hidden;padding:0">${p.img?`<img src="${p.img}" style="width:100%;height:100%;object-fit:cover">`:(p.ic||'💊')}</div>
         <b>${p.n}</b><div class="pd">${p.d||''}${p.by?' · di '+p.by:''}</div>
         <div class="prow"><span class="price">€${(+p.p).toFixed(2)}</span><button class="add" onclick="addCart(${gi})">＋</button></div>
       </div>`;}).join('')}
@@ -1910,19 +2024,24 @@ function shopHTML(){
   </div>`;
 }
 function shopPage(n){const prods=allProducts();const pages=Math.max(1,Math.ceil(prods.length/8));S.shopPage=Math.min(Math.max(0,n),pages-1);rebuild('shop');go('shop');document.getElementById('viewport').scrollTop=0;}
-async function addProduct(){
+function addProduct(){
   if(!canSell()){toast('Solo i professionisti verificati possono inserire prodotti');return;}
-  const n=prompt('Nome prodotto:'); if(!n||!n.trim())return;
-  const d=prompt('Descrizione breve:')||'';
-  const pr=parseFloat((prompt('Prezzo € (es. 19.90):','19.90')||'').replace(',','.')); if(isNaN(pr)){toast('Prezzo non valido');return;}
-  const ic=(prompt('Emoji/icona del prodotto:','💊')||'💊').trim()||'💊';
-  const obj={n:n.trim(),d:d.trim(),p:pr,ic:ic,bg:'#e8f1ff',tag:'Creator',by:S.user.name};
-  if(cloudOn()&&loggedIn()){
-    toast('Pubblicazione nel cloud…');
-    try{ await cloudAddProduct(obj); _prodLoaded=false; await cloudLoadProducts(); _prodLoaded=true; }
-    catch(e){ toast('Errore cloud: '+(e.message||e)); return; }
-  } else { S.customProducts=S.customProducts||[]; S.customProducts.push(obj); save(); }
-  rebuild('shop'); go('shop'); toast('Prodotto pubblicato nello shop ✓');
+  openForm({title:'Nuovo prodotto',subtitle:'Aggiungi una foto reale del prodotto',
+    fields:[
+      {id:'img',label:'Fotografia del prodotto',type:'photo'},
+      {id:'n',label:'Nome prodotto',ph:'es. Omega-3 Ultra'},
+      {id:'d',label:'Descrizione breve',ph:'es. Salute cuore e pelle'},
+      {id:'p',label:'Prezzo €',type:'number',value:'19.90'}
+    ],
+    submit:'Pubblica prodotto',
+    onSubmit:async(v)=>{ const n=(v.n||'').trim(); const pr=parseFloat((''+v.p).replace(',','.'));
+      if(!n){toast('Inserisci il nome');return false;} if(isNaN(pr)){toast('Prezzo non valido');return false;}
+      const obj={n:n,d:(v.d||'').trim(),p:pr,ic:'💊',bg:'#e8f1ff',tag:'Creator',by:S.user.name,img:v.img||''};
+      if(cloudOn()&&loggedIn()){ toast('Pubblicazione…'); try{ await cloudAddProduct(obj); _prodLoaded=false; await cloudLoadProducts(); _prodLoaded=true; }catch(e){ toast('Errore cloud: '+(e.message||e)); return true; } }
+      else { S.customProducts=S.customProducts||[]; S.customProducts.push(obj); save(); }
+      rebuild('shop'); go('shop'); toast('Prodotto pubblicato ✓');
+    }
+  });
 }
 function addCart(i){const p=allProducts()[i];if(!p)return;const e=S.cart.find(x=>x.n===p.n);if(e)e.q++;else S.cart.push({n:p.n,p:+p.p,q:1});save();renderCartBadge();const b=document.getElementById('shopcart');if(b){const c=cartCount();b.style.display=c?'flex':'none';b.textContent=c;}toast(p.n+' aggiunto al carrello');}
 function cartQty(n,delta){const it=S.cart.find(x=>x.n===n);if(!it)return;it.q+=delta;if(it.q<=0){S.cart=S.cart.filter(x=>x.n!==n);}save();renderCartBadge();openCart();}
@@ -2056,17 +2175,19 @@ const WK={
 };
 function allenamentoHTML(){
   const goal=S.user.goal||'Mantenimento'; const prog=WK[goal]||WK['Mantenimento']; const first=prog.list[0];
-  const custom=S.customWorkouts||[];
+  const custom=allWorkouts();
+  const meId=cloudUser&&cloudUser.id;
   return `
   <button class="back" onclick="go('home')">← Indietro</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Programma per: ${goal}</div><div class="n">Allenamento</div></div></div>
 
   <div class="banner gg"><span class="b-ic">🏋️</span><h4>Consigliato oggi · ${first.n}</h4><p>${prog.focus}. ${first.d}.</p></div>
 
-  ${canSell()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo allenamento (video)</button>`:''}
+  ${canTrainer()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo allenamento (video)</button>`:(canSell()?`<div class="alert info" style="padding:10px 12px;margin-bottom:12px"><span>🏋️</span><div>Solo i <b>personal trainer verificati</b> possono pubblicare video di allenamento.</div></div>`:'')}
 
-  ${custom.length?`<div class="section-title" style="margin-top:0">Allenamenti dei creator 🎬</div>
-  ${custom.map((w,i)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,'')}')">✓ Fatto</button></div></div>`).join('')}`:''}
+  <div class="section-title" style="margin-top:0">Allenamenti dei trainer 🎬</div>
+  <div id="wk-list">${custom.length?custom.map((w)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,"\\'")}')">✓ Fatto</button>${(w.id&&meId&&w.owner===meId)?`<button class="btn sm" style="width:auto;padding:7px 12px;font-size:12px;background:var(--coral);box-shadow:none" onclick="deleteWorkout('${w.id}')">🗑 Elimina</button>`:''}</div></div>`).join(''):`<div class="card" style="text-align:center"><div style="font-size:36px">🎬</div><div class="sub">Ancora nessun video di allenamento. ${canTrainer()?'Carica il primo!':'I personal trainer verificati li pubblicheranno qui.'}</div></div>`}</div>
+
 
   <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0">🔥</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div>
   ${(S.workoutLog&&S.workoutLog.length)?`<div class="sub" style="margin:8px 0 4px">Fatti oggi (tocca 🗑 se hai sbagliato):</div>${S.workoutLog.map((it,i)=>`<div class="row" style="padding:6px 0"><div class="rt"><b>✓ ${it.name}</b><small>~${it.kcal} kcal</small></div><button onclick="rmWorkoutDone(${i})" style="background:none;border:none;color:var(--coral);font-size:16px;cursor:pointer">🗑</button></div>`).join('')}`:''}</div>
@@ -2085,17 +2206,28 @@ function allenamentoHTML(){
   `;
 }
 function addWorkout(){
-  if(!canSell()){toast('Solo i professionisti verificati possono caricare allenamenti');return;}
-  const n=prompt('Nome allenamento:'); if(!n||!n.trim())return;
-  const d=prompt('Durata e livello (es. 40 min · Intermedio):','30 min · Intermedio')||'';
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
-  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
-    let url=URL.createObjectURL(f);
-    if(cloudOn()&&loggedIn()){ toast('Caricamento video…'); try{ url=await uploadBlob(f,f.name||'workout.mp4'); }catch(e){ toast('Cloud non riuscito, uso locale'); } }
-    S.customWorkouts=S.customWorkouts||[]; S.customWorkouts.unshift({n:n.trim(),d:d.trim(),video:url,by:S.user.name});
-    save(); rebuild('allenamento'); go('allenamento'); toast('Allenamento pubblicato 🎬');
-  };
-  inp.click();
+  if(!canTrainer()){toast('Solo i personal trainer verificati possono caricare allenamenti');return;}
+  openForm({title:'Carica un allenamento',subtitle:'Sarà pubblico per tutti gli utenti',
+    fields:[{id:'n',label:'Nome allenamento'},{id:'d',label:'Durata e livello',value:'30 min · Intermedio'}],
+    submit:'Scegli il video →',
+    onSubmit:(v)=>{ if(!v.n||!v.n.trim()){toast('Inserisci il nome');return false;}
+      const nm=v.n.trim(), dd=(v.d||'').trim();
+      const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
+      inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
+        if(cloudOn()&&loggedIn()){
+          toast('Caricamento video…');
+          try{ const url=await uploadBlob(f,f.name||'workout.mp4'); await cloudAddWorkout({n:nm,d:dd,video:url,by:S.user.name}); _wkLoaded=false; await cloudLoadWorkouts(); _wkLoaded=true; }
+          catch(e){ toast('Errore cloud: '+(e.message||e)); return; }
+        } else {
+          const url=URL.createObjectURL(f);
+          S.customWorkouts=S.customWorkouts||[]; S.customWorkouts.unshift({id:'w'+Date.now(),owner:null,n:nm,d:dd,video:url,by:S.user.name});
+          save();
+        }
+        rebuild('allenamento'); go('allenamento'); toast('Allenamento pubblicato 🎬 (visibile a tutti)');
+      };
+      inp.click();
+    }
+  });
 }
 function playVideo(url){
   const ov=document.createElement('div'); ov.className='cam-ov'; ov.style.background='#000';
@@ -2127,10 +2259,11 @@ function renderReminders(){
     </div>`).join('') || '<div class="sub">Nessun promemoria. Tocca "Nuovo promemoria" per crearne uno.</div>';
 }
 function toggleRem(i,el){S.reminders[i].on=!S.reminders[i].on;el.classList.toggle('on');save();toast(S.reminders[i].on?'Promemoria attivo':'Promemoria disattivato');}
-function rmReminder(i){ if(!confirm('Eliminare questo promemoria?'))return; S.reminders.splice(i,1); save(); renderReminders(); toast('Promemoria eliminato'); }
-function addReminder(){ const t=prompt('Cosa vuoi ricordarti?'); if(!t||!t.trim())return;
-  const when=prompt('Quando? (es. "Oggi · 20:00" oppure "ogni 2 ore")','Oggi · 20:00')||'';
-  S.reminders.push({t:t.trim(),d:when.trim()||'—',on:true,ic:'⭐',c:'var(--green)'}); save(); renderReminders(); toast('Promemoria creato (attivo)'); }
+function rmReminder(i){ confirmBox('Eliminare questo promemoria?',()=>{ S.reminders.splice(i,1); save(); renderReminders(); toast('Promemoria eliminato'); },{icon:'🔔',yes:'Elimina',danger:true}); }
+function addReminder(){ openForm({title:'Nuovo promemoria',
+  fields:[ {id:'t',label:'Cosa vuoi ricordarti?',ph:'es. Bere acqua'}, {id:'d',label:'Quando?',ph:'es. Oggi · 20:00 oppure ogni 2 ore',value:'Oggi · 20:00'} ],
+  submit:'Crea promemoria',
+  onSubmit:(v)=>{ if(!v.t||!v.t.trim()){toast('Scrivi il promemoria');return false;} S.reminders.push({t:v.t.trim(),d:(v.d||'').trim()||'—',on:true,ic:'⭐',c:'var(--green)'}); save(); renderReminders(); toast('Promemoria creato (attivo)'); } }); }
 
 /* ---------- PROFILO ---------- */
 function profiloHTML(){
@@ -2182,7 +2315,7 @@ function profiloHTML(){
 
   <div class="card tight">
     <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">💾</div><div class="tt"><b>Salvataggio automatico</b><small>Peso, umore, carrello e diario restano salvati su questo dispositivo</small></div><div class="switch on"><i></i></div></div>
-    <div class="row" onclick="if(confirm('Azzerare tutti i dati salvati?'))resetData()" style="cursor:pointer"><div class="ri" style="background:var(--coral-s)">🗑️</div><div class="rt"><b style="color:#d63a5c">Azzera dati e ricomincia</b></div><div class="rv">›</div></div>
+    <div class="row" onclick="confirmBox('Azzerare tutti i dati salvati su questo dispositivo?',resetData,{icon:'🗑️',yes:'Azzera',danger:true})" style="cursor:pointer"><div class="ri" style="background:var(--coral-s)">🗑️</div><div class="rt"><b style="color:#d63a5c">Azzera dati e ricomincia</b></div><div class="rv">›</div></div>
   </div>
 
   <button class="btn sec" onclick="logout()">Esci / cambia profilo</button>
@@ -2309,7 +2442,7 @@ function renderCalDetail(){
       :'<div class="sub">Nessun evento pianificato. Tocca + per aggiungere.</div>'}
     <button class="btn ghost sm" style="margin-top:10px" onclick="addCalEvent(${d})">＋ Aggiungi evento</button>`;
 }
-function addCalEvent(d){const v=prompt('Nuovo evento per il '+d+' luglio:');if(!v)return;S.events=S.events||{};(S.events[d]=S.events[d]||[]).push('📌 '+v.trim());save();renderCalDetail();const c=document.getElementById('plan-cal');toast('Evento aggiunto al '+d+' luglio');}
+function addCalEvent(d){ openForm({title:'Nuovo evento',subtitle:d+' luglio',fields:[{id:'v',label:'Evento'}],submit:'Aggiungi',onSubmit:(x)=>{ if(!x.v||!x.v.trim())return false; S.events=S.events||{};(S.events[d]=S.events[d]||[]).push('📌 '+x.v.trim());save();renderCalDetail();toast('Evento aggiunto al '+d+' luglio'); }}); }
 function setCalDay(d){S.calSel=d;document.querySelectorAll('#plan-cal .d').forEach(x=>x.classList.remove('sel'));const c=document.getElementById('cd-'+d);if(c)c.classList.add('sel');renderCalDetail();}
 function renderPlanBody(t){
   const b=document.getElementById('plan-body'); if(!b)return;
@@ -2399,7 +2532,7 @@ function renderPlanBody(t){
   }
 }
 function toggleTask(i,el){S.today[i].done=!S.today[i].done;renderPlanBody('day');rebuild('home');toast(S.today[i].done?'Completato ✓':'Da fare');}
-function addTodayTask(){const v=prompt('Nuova attività:');if(!v)return;const h=prompt('A che ora? (es. 19:00)','20:00')||'—';S.today.push({time:h,t:v.trim(),ic:'📌',done:false});save();renderPlanBody('day');rebuild('home');toast('Attività aggiunta');}
+function addTodayTask(){ openForm({title:'Nuova attività',fields:[{id:'v',label:'Attività'},{id:'h',label:'A che ora?',type:'time',value:'20:00'}],submit:'Aggiungi',onSubmit:(x)=>{ if(!x.v||!x.v.trim())return false; S.today.push({time:x.h||'—',t:x.v.trim(),ic:'📌',done:false});save();renderPlanBody('day');rebuild('home');toast('Attività aggiunta'); }}); }
 
 /* ---------- BENESSERE EMOTIVO ---------- */
 const MOOD_EMO=[{v:5,e:"😄",l:"Ottima"},{v:4,e:"🙂",l:"Bene"},{v:3,e:"😐",l:"Così così"},{v:2,e:"😟",l:"Giù"},{v:1,e:"😢",l:"Male"}];
@@ -2709,7 +2842,7 @@ function startAllAudio(){
 function stopPreview(){ _previewAudios.forEach(a=>{try{a.pause();}catch(e){}}); _previewAudios=[]; if(_previewCtx){try{clearTimeout(_previewCtx._t);_previewCtx.close();}catch(e){}_previewCtx=null;} }
 function toggleMirror(){ _editState.flip=!_editState.flip; renderEditor(); toast(_editState.flip?'Video specchiato':'Specchio disattivato'); }
 function addPhoto(){ fileFallback((url)=>{ _editState.overlays.push({img:url,x:50,y:45,size:140}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la foto dove vuoi · A−/A＋ per la dimensione'); },'image/*'); }
-function addOverlay(){ const t=prompt('Testo da scrivere sul video:'); if(!t||!t.trim())return; _editState.overlays.push({text:t.trim(),x:50,y:40,color:'#fff',size:28}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la scritta dove vuoi · usa la barra per colore e dimensione'); }
+function addOverlay(){ openForm({title:'Scritta sul video',fields:[{id:'t',label:'Testo'}],submit:'Aggiungi',onSubmit:(v)=>{ if(!v.t||!v.t.trim())return false; _editState.overlays.push({text:v.t.trim(),x:50,y:40,color:'#fff',size:28}); _selOv=_editState.overlays.length-1; renderEditor(); toast('Trascina la scritta dove vuoi'); }}); }
 function ovDown(ev,i){ ev.preventDefault(); ev.stopPropagation(); _selOv=i; _ovDrag={i,moved:false,px:ev.clientX,py:ev.clientY}; try{ev.currentTarget.setPointerCapture(ev.pointerId);}catch(e){}
   document.querySelectorAll('.ed-ov').forEach(el=>el.style.outline=''); const cur=document.querySelector('[data-oi="'+i+'"]'); if(cur)cur.style.outline='1.5px dashed rgba(255,255,255,.75)';
   const bar=document.getElementById('ed-ovbar'); if(bar)bar.style.display='flex'; }
@@ -2721,7 +2854,7 @@ function ovUp(ev){ if(_ovDrag){_ovDrag=null;} }
 function selOvEl(){ return document.querySelector('[data-oi="'+_selOv+'"]'); }
 function ovColor(c){ const o=_editState.overlays[_selOv]; if(!o||o.img)return; o.color=c; const el=selOvEl(); if(el)el.style.color=c; }
 function ovSize(d){ const o=_editState.overlays[_selOv]; if(!o)return; if(o.img){ o.size=Math.max(50,Math.min(300,(o.size||140)+d*8)); const im=selOvEl()&&selOvEl().querySelector('img'); if(im)im.style.width=o.size+'px'; } else { o.size=Math.max(14,Math.min(64,(o.size||26)+d)); const el=selOvEl(); if(el)el.style.fontSize=o.size+'px'; } }
-function ovEditText(){ const o=_editState.overlays[_selOv]; if(!o||o.img){toast('Foto: usa A−/A＋ per ridimensionare o 🗑 per eliminare');return;} const t=prompt('Modifica testo:',o.text); if(t===null)return; if(!t.trim()){ovDelete();return;} o.text=t.trim(); const el=selOvEl(); if(el)el.textContent=o.text; }
+function ovEditText(){ const o=_editState.overlays[_selOv]; if(!o||o.img){toast('Foto: usa A−/A＋ per ridimensionare o 🗑 per eliminare');return;} openForm({title:'Modifica testo',fields:[{id:'t',label:'Testo',value:o.text}],submit:'Salva',onSubmit:(v)=>{ if(!v.t||!v.t.trim()){ovDelete();return;} o.text=v.t.trim(); const el=selOvEl(); if(el)el.textContent=o.text; }}); }
 function ovDelete(){ if(_selOv<0)return; _editState.overlays.splice(_selOv,1); _selOv=-1; renderEditor(); }
 function toggleMute(){ _editState.muteOriginal=!_editState.muteOriginal; renderEditor(); }
 function wireEditorMedia(){ const v=document.getElementById('ed-video'); if(!v)return;
@@ -2746,7 +2879,7 @@ function openMusicPanel(){
 function closeMusicPanel(){ const b=document.getElementById('music-panel'); if(b)b.remove(); }
 function setMusicPreset(name){ _editState.music={preset:name}; closeMusicPanel(); renderEditor(); toast('Musica: '+name); }
 function uploadMusic(){ fileFallback((url,file)=>{ _editState.music={src:url,name:(file&&file.name)||'audio'}; closeMusicPanel(); renderEditor(); toast('Musica aggiunta'); },'audio/*'); }
-function linkMusic(){ const l=prompt('Incolla il link del brano (Spotify, Apple Music, YouTube…):'); if(!l||!l.trim())return; let name='Traccia'; if(/spotify/i.test(l))name='Spotify'; else if(/apple|music\.apple/i.test(l))name='Apple Music'; else if(/youtu/i.test(l))name='YouTube'; _editState.music={link:l.trim(),name:name}; closeMusicPanel(); renderEditor(); toast('Brano collegato da '+name); }
+function linkMusic(){ openForm({title:'Brano da app musicale',fields:[{id:'l',label:'Link (Spotify, Apple Music, YouTube…)'}],submit:'Collega',onSubmit:(v)=>{ const l=(v.l||'').trim(); if(!l)return false; let name='Traccia'; if(/spotify/i.test(l))name='Spotify'; else if(/apple|music\.apple/i.test(l))name='Apple Music'; else if(/youtu/i.test(l))name='YouTube'; _editState.music={link:l,name:name}; closeMusicPanel(); renderEditor(); toast('Brano collegato da '+name); }}); }
 async function toggleVoice(){
   if(_voiceRec&&_voiceRec.state==='recording'){ _voiceRec.stop(); return; }
   if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Registrazione audio non supportata'); return; }
@@ -2826,7 +2959,7 @@ function myShortCard(s){
     <div class="info"><div class="uname">@${s.user}</div><div class="cap">${(s.caption||'').replace(/</g,'&lt;')}</div></div>
   </div>`;
 }
-function deleteMyShort(id){ if(!confirm('Eliminare questo video?'))return; MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); }
+function deleteMyShort(id){ confirmBox('Eliminare questo video?',()=>{ MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); },{icon:'🎬',yes:'Elimina',danger:true}); }
 async function cloudDeletePost(id){ if(!cloudOn())return {error:new Error('offline')};
   try{
     // recupera l'url per cancellare anche il file dallo storage
@@ -2836,10 +2969,10 @@ async function cloudDeletePost(id){ if(!cloudOn())return {error:new Error('offli
     if(videoUrl){ const m=videoUrl.split('/videos/'); if(m[1]){ try{ await SB.storage.from('videos').remove([decodeURIComponent(m[1])]); }catch(e){} } }
     return res;
   }catch(e){ return {error:e}; } }
-async function deletePost(id){ if(!confirm('Eliminare definitivamente questo video?'))return;
+function deletePost(id){ confirmBox('Eliminare definitivamente questo video?',()=>_deletePost(id),{icon:'🎬',yes:'Elimina',danger:true}); }
+async function _deletePost(id){
   const res=await cloudDeletePost(id)||{};
   if(res.error){ toast('Non eliminato: '+(res.error.message||res.error)); return; }
-  // rimuovo subito la card e ricarico il feed dal cloud
   const card=document.querySelector('.short[data-pid="'+id+'"]'); if(card)card.remove();
   renderComBody('perte'); toast('Video eliminato definitivamente'); }
 function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; const preset=card.getAttribute('data-preset');
@@ -2896,14 +3029,14 @@ function toggleFollow(user,el){
   });
 }
 function composeShort(){
-  const cap=prompt('Descrivi il tuo short (What I eat, allenamento, ricetta...):'); if(!cap||!cap.trim())return;
-  const types=["What I eat","Allenamento","Ricetta","Trasformazione"];
-  const t=types[Math.min(3,Math.max(0,(parseInt(prompt('Tipo? 1=What I eat, 2=Allenamento, 3=Ricetta, 4=Trasformazione','1'))||1)-1))];
-  const emo={"What I eat":"🍽️","Allenamento":"🏋️","Ricetta":"🍳","Trasformazione":"✨"}[t];
-  SHORTS.unshift({id:Date.now(),user:(S.user.name||'io').toLowerCase().replace(/\s/g,'.'),av:S.user.initials,avc:"#1fae7e",verified:false,type:t,diet:S.diet,goal:S.user.goal,emoji:emo,from:"#1fae7e",to:"#4bd4a6",label:"audio originale",dur:"0:30",cap:cap.trim(),tags:[t.toLowerCase().replace(/\s/g,''),(S.diet||'').toLowerCase(),(S.user.goal||'').toLowerCase()].filter(Boolean),likes:0,comments:0,shares:0,saves:0,views:1,followers:(S.following?0:0),liked:false});
-  renderComBody('perte');
-  document.querySelectorAll('#com-tab button').forEach((b,i)=>b.classList.toggle('on',i===0));
-  toast('Short pubblicato! 🎬 Più interagisci, più diventi virale.');
+  openForm({title:'Nuovo short',
+    fields:[{id:'cap',label:'Descrizione',ph:'What I eat, allenamento, ricetta…'},{id:'t',label:'Tipo',type:'select',value:'What I eat',options:['What I eat','Allenamento','Ricetta','Trasformazione']}],
+    submit:'Pubblica',
+    onSubmit:(v)=>{ const cap=(v.cap||'').trim(); if(!cap)return false; const t=v.t||'What I eat';
+      const emo={"What I eat":"🍽️","Allenamento":"🏋️","Ricetta":"🍳","Trasformazione":"✨"}[t];
+      SHORTS.unshift({id:Date.now(),user:(S.user.name||'io').toLowerCase().replace(/\s/g,'.'),av:S.user.initials,avc:"#1fae7e",verified:false,type:t,diet:S.diet,goal:S.user.goal,emoji:emo,from:"#1fae7e",to:"#4bd4a6",label:"audio originale",dur:"0:30",cap:cap,tags:[t.toLowerCase().replace(/\s/g,''),(S.diet||'').toLowerCase(),(S.user.goal||'').toLowerCase()].filter(Boolean),likes:0,comments:0,shares:0,saves:0,views:1,followers:0,liked:false});
+      renderComBody('perte'); document.querySelectorAll('#com-tab button').forEach((b,i)=>b.classList.toggle('on',i===0)); toast('Short pubblicato! 🎬'); }
+  });
 }
 function comMsg(m){return m.me?`<div class="msg me">${m.txt}</div>`:`<div class="msg ai"><b style="font-size:11px;color:var(--green-d)">${m.u}</b><br>${m.txt}</div>`;}
 const COM_REPLIES=["Ottima idea, grazie! 🙌","Anche io la faccio spesso, super!","Provo stasera e ti dico 😍","Concordo, funziona benissimo per me."];
@@ -3444,7 +3577,7 @@ function privacyHTML(){
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">I tuoi dati, al sicuro</div><div class="n">🔒 Privacy</div></div></div>
   <div class="card">
     <div class="h">Titolare</div>
-    <div class="sub">Il trattamento dei dati è gestito dal titolare di Auréa. Per qualsiasi richiesta: <b>samuele@grenworld.com</b>.</div>
+    <div class="sub">Il trattamento dei dati è gestito dal titolare di Auréa. I dati identificativi e di contatto del titolare verranno indicati qui <b>[da definire]</b>.</div>
   </div>
   <div class="card">
     <div class="h">Quali dati trattiamo</div>
@@ -3460,7 +3593,7 @@ function privacyHTML(){
   </div>
   <div class="card">
     <div class="h">I tuoi diritti (GDPR)</div>
-    <div class="sub" style="margin-bottom:12px">Esercita subito i tuoi diritti direttamente qui, oppure scrivi a samuele@grenworld.com. Hai anche diritto di reclamo al Garante Privacy.</div>
+    <div class="sub" style="margin-bottom:12px">Esercita subito i tuoi diritti direttamente qui, oppure contatta il titolare (recapito <b>[da definire]</b>). Hai anche diritto di reclamo al Garante Privacy.</div>
     <button class="btn sec sm" style="margin-bottom:8px" onclick="exportMyData()">⬇️ Esporta i miei dati (portabilità)</button>
     <button class="btn sec sm" style="margin-bottom:8px" onclick="revokeHealthConsent()">🚫 Revoca il consenso ai dati sanitari</button>
     <button class="btn sm" style="background:var(--coral);box-shadow:none" onclick="deleteMyAccount()">🗑️ Elimina account e tutti i dati</button>
@@ -3506,10 +3639,13 @@ function renderAdmin(){
   });
 }
 async function adminSetPro(id,status){ try{ const {error}=await SB.from('pros').update({status}).eq('id',id); if(error)throw error; await SB.from('profiles').update({pro_status:status}).eq('id',id); toast('Professionista: '+status); _docsLoaded=false; renderAdmin(); }catch(e){ toast('Errore: '+(e.message||e)); } }
-async function adminDelPro(id){ if(!confirm('Rimuovere questo professionista dalla piattaforma?'))return; try{ const {error}=await SB.from('pros').delete().eq('id',id); if(error)throw error; await SB.from('profiles').update({is_pro:false,pro_status:null}).eq('id',id); toast('Professionista rimosso'); _docsLoaded=false; renderAdmin(); }catch(e){ toast('Errore: '+(e.message||e)); } }
-async function adminDelProduct(id){ if(!confirm('Eliminare questo prodotto?'))return; const {error}=await cloudDeleteProduct(id); if(error){toast('Errore: '+(error.message||error));return;} _prodLoaded=false; toast('Prodotto eliminato'); renderAdmin(); }
-async function adminAddProduct(){ const n=prompt('Nome prodotto:'); if(!n||!n.trim())return; const d=prompt('Descrizione breve:')||''; const pr=parseFloat((prompt('Prezzo € (es. 19.90):','19.90')||'').replace(',','.')); if(isNaN(pr)){toast('Prezzo non valido');return;} const ic=(prompt('Emoji/icona:','💊')||'💊').trim()||'💊';
-  try{ await cloudAddProduct({n:n.trim(),d:d.trim(),p:pr,ic:ic,bg:'#e8f1ff',tag:'',by:'Auréa'}); _prodLoaded=false; toast('Prodotto aggiunto'); renderAdmin(); }catch(e){ toast('Errore: '+(e.message||e)); } }
+function adminDelPro(id){ confirmBox('Rimuovere questo professionista dalla piattaforma?',async()=>{ try{ const {error}=await SB.from('pros').delete().eq('id',id); if(error)throw error; await SB.from('profiles').update({is_pro:false,pro_status:null}).eq('id',id); toast('Professionista rimosso'); _docsLoaded=false; renderAdmin(); }catch(e){ toast('Errore: '+(e.message||e)); } },{icon:'🩺',yes:'Rimuovi',danger:true}); }
+function adminDelProduct(id){ confirmBox('Eliminare questo prodotto?',async()=>{ const {error}=await cloudDeleteProduct(id); if(error){toast('Errore: '+(error.message||error));return;} _prodLoaded=false; toast('Prodotto eliminato'); renderAdmin(); },{icon:'🛍️',yes:'Elimina',danger:true}); }
+function adminAddProduct(){ openForm({title:'Aggiungi prodotto',subtitle:'Con foto reale del prodotto',
+  fields:[ {id:'img',label:'Fotografia',type:'photo'}, {id:'n',label:'Nome prodotto'}, {id:'d',label:'Descrizione breve'}, {id:'p',label:'Prezzo €',type:'number',value:'19.90'} ],
+  submit:'Aggiungi',
+  onSubmit:async(v)=>{ const n=(v.n||'').trim(); const pr=parseFloat((''+v.p).replace(',','.')); if(!n){toast('Inserisci il nome');return false;} if(isNaN(pr)){toast('Prezzo non valido');return false;}
+    try{ await cloudAddProduct({n:n,d:(v.d||'').trim(),p:pr,ic:'💊',bg:'#e8f1ff',tag:'',by:'Auréa',img:v.img||''}); _prodLoaded=false; toast('Prodotto aggiunto'); renderAdmin(); }catch(e){ toast('Errore: '+(e.message||e)); } } }); }
 const PRO_TIMES=['08:00','09:00','09:30','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','16:30','17:00','18:00','19:00'];
 function toggleProReco(name,btn){ if(!S.pro)return; S.pro.recommends=S.pro.recommends||[]; const i=S.pro.recommends.indexOf(name); if(i<0)S.pro.recommends.push(name); else S.pro.recommends.splice(i,1); if(btn)btn.classList.toggle('sel'); save(); toast(i<0?('Consigli: '+name):('Rimosso: '+name)); }
 // prodotti consigliati da un professionista (il mio profilo o default per specialità dei demo)
@@ -3532,15 +3668,17 @@ function renderProAvail(){
   </div>`).join('');
 }
 function proAddDate(){
-  const v=prompt('Data disponibile (formato GG/MM, es. 24/07):'); if(!v)return;
-  const m=v.match(/(\d{1,2})[\/\-.](\d{1,2})/); if(!m){toast('Formato non valido. Usa GG/MM');return;}
-  const day=+m[1], mon=+m[2]; const now=new Date(); let yr=now.getFullYear();
-  const d=new Date(yr,mon-1,day); if(d< new Date(now.getFullYear(),now.getMonth(),now.getDate())) d.setFullYear(yr+1);
-  const key=dateKey(d), label=dateLabel(d);
-  S.pro.avail=S.pro.avail||[];
-  if(S.pro.avail.some(x=>x.date===key)){toast('Giorno già presente');return;}
-  S.pro.avail.push({date:key,label,times:[]}); S.pro.avail.sort((a,b)=>a.date<b.date?-1:1);
-  save(); renderProAvail(); toast('Giorno aggiunto: '+label);
+  openForm({title:'Giorno disponibile',subtitle:'Scegli la data in cui ricevi',
+    fields:[{id:'d',label:'Data',type:'date'}],
+    submit:'Aggiungi giorno',
+    onSubmit:(v)=>{ if(!v.d){toast('Seleziona una data');return false;}
+      const d=new Date(v.d+'T00:00:00'); if(isNaN(d.getTime())){toast('Data non valida');return false;}
+      const key=dateKey(d), label=dateLabel(d);
+      S.pro.avail=S.pro.avail||[];
+      if(S.pro.avail.some(x=>x.date===key)){toast('Giorno già presente');return false;}
+      S.pro.avail.push({date:key,label,times:[]}); S.pro.avail.sort((a,b)=>a.date<b.date?-1:1);
+      save(); renderProAvail(); toast('Giorno aggiunto: '+label); }
+  });
 }
 function proDelDate(di){ S.pro.avail.splice(di,1); save(); renderProAvail(); }
 function proAddTime(di){ const sel=document.getElementById('pro-t-'+di); if(!sel||!sel.value)return; const t=sel.value; S.pro.avail[di].times=S.pro.avail[di].times||[]; if(!S.pro.avail[di].times.includes(t)){S.pro.avail[di].times.push(t); S.pro.avail[di].times.sort();} save(); renderProAvail(); }
@@ -3596,7 +3734,7 @@ function proStatusHTML(){
 
   <div class="grid2">
     <button class="btn sec sm" onclick="go('prenota')">Vedi come appari</button>
-    <button class="btn sm" style="background:var(--coral);box-shadow:none" onclick="if(confirm('Ritirare il profilo professionista?')){S.pro=null;save();rebuild('pro');rebuild('prenota');go('profilo');toast('Profilo pro rimosso');}">Ritira profilo</button>
+    <button class="btn sm" style="background:var(--coral);box-shadow:none" onclick="confirmBox('Ritirare il profilo professionista?',()=>{S.pro=null;save();rebuild('pro');rebuild('prenota');go('profilo');toast('Profilo pro rimosso');},{icon:'🎓',yes:'Ritira',danger:true})">Ritira profilo</button>
   </div>`;
 }
 
@@ -3630,7 +3768,7 @@ function cloudHTML(){
       <button class="btn" onclick="doSignIn()">Accedi</button>
       <button class="btn sec" style="margin-top:10px" onclick="doSignUp()">Crea un nuovo account</button>
     </div>
-    <button class="btn sec sm" onclick="if(confirm('Rimuovere la configurazione cloud?')){localStorage.removeItem('aurea_cloud');SB=null;rebuild('cloud');go('cloud');}">Cambia configurazione</button>`;
+    <button class="btn sec sm" onclick="confirmBox('Rimuovere la configurazione cloud?',()=>{localStorage.removeItem('aurea_cloud');SB=null;rebuild('cloud');go('cloud');},{icon:'☁️',yes:'Rimuovi'})">Cambia configurazione</button>`;
   }
   return `<button class="back" onclick="go('profilo')">← Profilo</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Modalità reale attiva ✓</div><div class="n">☁️ Il tuo account</div></div></div>
@@ -3783,6 +3921,7 @@ function afterRender(id){
   if(id==='pro'){renderProAvail();}
   if(id==='admin'){renderAdmin();}
   if(id==='ordini'){renderOrders();}
+  if(id==='allenamento'){ if(cloudOn()&&!_wkLoaded&&!_wkFetching){ _wkFetching=true; cloudLoadWorkouts().then(()=>{ _wkLoaded=true; _wkFetching=false; if(curScreen==='allenamento')rebuild('allenamento'); }); } }
 }
 function boot(){
   restore();
