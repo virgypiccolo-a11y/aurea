@@ -614,7 +614,7 @@ async function _deleteMyAccount(){
   try{ localStorage.removeItem('aurea_data'); }catch(e){}
   toast('Account e dati eliminati'); setTimeout(()=>location.reload(),800);
 }
-function preloadCloud(){ renderNav(); if(!cloudOn())return;
+function preloadCloud(){ renderNav(); if(S.pro && S.pro.status==='in_verifica'){ setTimeout(verifyPro,600); } if(!cloudOn())return;
   cloudLoadProducts().then(()=>{ _prodLoaded=true; if(curScreen==='home')rebuild('home'); if(curScreen==='shop')rebuild('shop'); });
   cloudLoadDocs().then(()=>{ _docsLoaded=true; if(curScreen==='prenota')renderDocs('Tutti'); });
 }
@@ -1994,7 +1994,8 @@ async function cloudAddWorkout(o){ const row={owner_id:cloudUser.id,name:o.n,des
 async function cloudDeleteWorkout(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('workouts').delete().eq('id',id); }catch(e){ return {error:e}; } }
 function allWorkouts(){ return cloudOn()?CLOUD_WORKOUTS.slice():(S.customWorkouts||[]); }
 /* ===== MODALITÀ PROFESSIONISTA ===== */
-function isProMode(){ return !!(S.pro && S.pro.status==='verificato'); }
+// Una volta registrato come professionista resta tale finché non preme "Ritira profilo".
+function isProMode(){ return !!S.pro; }
 function canPlan(){ return !!(S.pro && S.pro.status==='verificato' && /nutrizion|dietist|biolog|medico|diabetolog|endocrinolog|psiconutri|dietolog/i.test((S.pro.profession||''))); }
 function retirePro(){ confirmBox('Ritirare il tuo profilo professionista? Tornerai a usare Auréa come utente.',()=>{
   S.pro=null;
@@ -2007,7 +2008,8 @@ function proDashHTML(){
   <div class="topbar"><div class="hello"><div class="k">Area professionista</div><div class="n">Ciao, ${s.name||S.user.name} <span style="color:var(--amber);vertical-align:-3px;display:inline-block">${ic('sparkle',18)}</span></div></div>
     <div class="avatar" onclick="go('profilo')">${(s.name||S.user.name||'?').slice(0,1).toUpperCase()}</div></div>
 
-  <div class="banner gg"><span class="b-ic">${s.ic||'🎓'}</span><h4>${s.profession}</h4><p>${s.status==='verificato'?'Profilo verificato e attivo. Gestisci qui la tua attività.':'In verifica.'}</p></div>
+  <div class="banner gg"><span class="b-ic">${s.ic||'🎓'}</span><h4>${s.profession}</h4><p>${s.status==='verificato'?'Profilo verificato e attivo. Gestisci qui la tua attività.':(s.status==='in_verifica'?'Verifica dei titoli in corso…':'Verifica da completare: ricarica i documenti dalla tua scheda.')}</p></div>
+  ${s.status!=='verificato'?`<div class="alert ${s.status==='in_verifica'?'info':'warn'}" onclick="go('pro')" style="cursor:pointer"><span>${s.status==='in_verifica'?'⏳':'📄'}</span><div>${s.status==='in_verifica'?'Sei registrato come professionista. Appena verificato comparirai in "Prenota" e potrai pubblicare.':'Non abbiamo potuto verificare automaticamente: tocca per ricontrollare i dati e ricaricare il certificato.'} Il tuo profilo resta salvato finché non lo ritiri.</div></div>`:''}
 
   <div class="grid2" style="margin-bottom:8px">
     <div class="stat" style="cursor:default"><div class="ico" style="background:#e8f1ff;color:var(--blue)">${ic('calendar',20)}</div><div class="v">${S.appointments.length}</div><div class="l">Appuntamenti</div></div>
@@ -3638,7 +3640,7 @@ function submitPro(){
   const disc=document.getElementById('pro-disclaimer');
   if(!disc||!disc.checked){toast('Devi accettare la dichiarazione di responsabilità');return;}
   S.pro={profession:prof,ic:p.ic,ente:p.ente,name,title,uni,year,albo,reg,price:price.startsWith('€')?price:'€'+price,bio,cert:_proCert,followers:0,status:'in_verifica',submitted:true,avail:[],disclaimerAccepted:true,disclaimerAt:new Date().toISOString()};
-  save(); rebuild('pro'); go('pro');
+  save(); renderNav(); rebuild('pro'); go('pro');
   toast('Inviato! Verifica dei titoli in corso…');
   setTimeout(verifyPro,2600);
 }
@@ -4053,6 +4055,8 @@ function boot(){
   Object.keys(BUILDERS).forEach(afterRender);
   go('home');
   save();
+  // se è rimasto un professionista "in verifica" (verifica auto interrotta), completala
+  if(S.pro && S.pro.status==='in_verifica'){ setTimeout(verifyPro,600); }
   if(S.stepsConnected){ try{ startPedometer(); }catch(e){} }
   // La PRIMA schermata è sempre login/registrazione, finché non si è loggati
   showAuthWall();
