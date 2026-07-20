@@ -535,7 +535,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge','ricette'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -911,7 +911,13 @@ const ICONS={
  shield:'<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/>',
  lock:'<rect x="5.5" y="10.5" width="13" height="9" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
  box:'<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
- clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+ bowl:'<path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M6 11c0-3 2.7-5 6-5s6 2 6 5"/><path d="M10 3.5c1 .8 1 1.8 0 2.6M13.5 3.8c.8.6.8 1.4 0 2"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ egg:'<path d="M12 3.5c3 0 5.5 4.5 5.5 8.5a5.5 5.5 0 0 1-11 0C6.5 8 9 3.5 12 3.5z"/>',
+ fish:'<path d="M4 12c3-4 9-5 13-3 2 1 3 3 3 3s-1 2-3 3c-4 2-10 1-13-3z"/><path d="M16 12h.01"/><path d="M4 12c-1 1-1 3 0 4M4 12c-1-1-1-3 0-4"/>',
+ meat:'<circle cx="9" cy="9" r="5"/><path d="M12.5 12.5 20 20M9 9l2 2"/>',
+ leaf:'<path d="M5 19C5 11 11 5 19 5c0 8-6 14-14 14z"/><path d="M5 19c3-6 7-9 11-11"/>'
 };
 function ic(name,size){ size=size||22; const p=ICONS[name]||ICONS.grid; return `<svg class="ico-svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block">${p}</svg>`; }
 
@@ -1003,6 +1009,7 @@ const MENU=[
   {id:'sfide',icn:'flame',l:'Sfide'},
   {id:'badge',icn:'shield',l:'Badge'},
   {id:'community',icn:'users',l:'Community'},
+  {id:'ricette',icn:'bowl',l:'Ricette'},
   {id:'ciclo',icn:'flower',l:'Ciclo',fem:true},
   {id:'recupero',icn:'rainbow',l:'Recupero'},
   {id:'detox',icn:'cup',l:'Detox'},
@@ -1050,7 +1057,9 @@ function todayKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.get
 function scoreStreak(){ const h=(S.scoreHistory||[]).map(x=>x.date).slice().sort(); if(!h.length)return 0; let streak=1; for(let i=h.length-1;i>0;i--){ const diff=Math.round((new Date(h[i]+'T00:00')-new Date(h[i-1]+'T00:00'))/86400000); if(diff===1)streak++; else if(diff===0)continue; else break; } return streak; }
 function aureaBreakdown(){
   const wp=weightPlan(); const target=wp.kcal||S.user.kcalGoal||1800; const b={};
-  b.alimentazione = (S.intake&&S.intake.kcal>0) ? _sc(Math.round(100-Math.abs(S.intake.kcal-target)/target*200),0,100) : null;
+  // alimentazione: registrare i pasti e restare nel budget premia; si penalizza solo lo sforamento
+  if(!(S.intake&&S.intake.kcal>0)) b.alimentazione=null;
+  else { const ratio=S.intake.kcal/target; b.alimentazione = ratio<=1 ? _sc(Math.round(70+30*Math.min(ratio/0.8,1)),0,100) : _sc(Math.round(100-(ratio-1)*250),0,100); }
   let act=_sc(Math.round((S.steps||0)/(S.stepsGoal||10000)*100),0,100); if((S.workoutKcal||0)>0)act=Math.min(100,act+20); b.attivita=act;
   if(S.sleep==null) b.sonno=null; else { const need=sleepNeeded(); b.sonno = S.sleep>=need.ideal?100:(S.sleep>=need.min?85:_sc(Math.round(S.sleep/need.min*85),0,85)); }
   b.idratazione = _sc(Math.round((S.water||0)/(S.waterGoal||8)*100),0,100);
@@ -1564,7 +1573,7 @@ function fCustom(){ openForm({title:'Alimento non in lista',
   onSubmit:(v)=>{ if(!v.f||!v.f.trim()){toast('Inserisci il nome');return false;} const k=parseInt(v.k); if(isNaN(k)){toast('Calorie non valide');return false;}
     S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:v.f.trim(),k}); S.intake.kcal+=k; save(); rebuild('home'); toast('Aggiunto: '+v.f.trim()+' · '+k+' kcal'); go('diario'); } }); }
 function rmFood(i){ if(i<0||!S.foodLog||!S.foodLog[i])return; const it=S.foodLog[i]; S.intake.kcal=Math.max(0,S.intake.kcal-(it.k||0)); S.intake.prot=Math.max(0,S.intake.prot-(it.prot||0)); S.foodLog.splice(i,1); save(); rebuild('diario'); rebuild('home'); toast('Rimosso'); }
-function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); S._diaryCount=(S._diaryCount||0)+1; save(); }
+function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); S._diaryCount=(S._diaryCount||0)+1; try{saveScoreToday();}catch(e){} save(); rebuild('home'); }
 
 /* ---------- SCANNER ---------- */
 function scannerHTML(){
@@ -1913,6 +1922,7 @@ function planHTML(){
   <div class="card">
     <div class="h">🎛️ Approcci alimentari</div>
     <div class="quick">
+      <button class="qa" onclick="go('ricette')"><span class="qi" style="background:var(--mint);color:var(--green-d)">${ic('bowl',22)}</span>Ricette</button>
       <button class="qa" onclick="go('detox')"><span class="qi" style="background:var(--mint)">🥤</span>Detox</button>
       <button class="qa" onclick="go('digiuno')"><span class="qi" style="background:var(--violet-s)">⏳</span>Digiuno</button>
       <button class="qa" onclick="go('storia')"><span class="qi" style="background:#e8f1ff">📋</span>Storia clinica</button>
@@ -2299,6 +2309,151 @@ async function cloudDeleteWorkout(id){ if(!cloudOn())return {error:new Error('of
     return res;
   }catch(e){ return {error:e}; } }
 function allWorkouts(){ return cloudOn()?CLOUD_WORKOUTS.slice():(S.customWorkouts||[]); }
+
+/* ============ RICETTE (Auréa/IA + professionisti + utenti) ============ */
+const RECIPE_DIETS=['vegano','vegetariano','chetogenica','mediterranea','senza glutine','senza lattosio','alta proteina'];
+const RECIPES_SEED=[
+  {id:'s1',n:'Frittata proteica di albumi e spinaci',d:'Soffice, saziante e pronta in 5 minuti. Perfetta a colazione o cena leggera.',k:280,p:32,c:6,f:12,ic:'egg',by:'Auréa',tags:['vegetariano','chetogenica','senza glutine','alta proteina'],ing:['4 albumi + 1 uovo intero','80 g spinaci freschi','20 g parmigiano','1 cucchiaino olio EVO','sale, pepe, noce moscata'],steps:'Salta gli spinaci in padella con l\'olio. Sbatti albumi e uovo con sale e parmigiano, versa sugli spinaci e cuoci a fuoco medio 3-4 min per lato.'},
+  {id:'s2',n:'Bowl di quinoa, ceci e verdure',d:'Piatto unico completo e mediterraneo, ricco di fibre e proteine vegetali.',k:430,p:18,c:58,f:13,ic:'bowl',by:'Auréa',tags:['vegano','vegetariano','mediterranea','senza glutine','senza lattosio'],ing:['70 g quinoa','120 g ceci lessi','1/2 zucchina','1/2 peperone','pomodorini','1 cucchiaio olio EVO','limone, prezzemolo'],steps:'Cuoci la quinoa 12 min. Salta le verdure a cubetti. Unisci ceci, quinoa e verdure, condisci con olio, limone e prezzemolo.'},
+  {id:'s3',n:'Salmone al forno con asparagi',d:'Ricco di Omega-3, pochi carboidrati, tanta sazietà.',k:390,p:34,c:8,f:24,ic:'fish',by:'Auréa',tags:['chetogenica','mediterranea','senza glutine','senza lattosio','alta proteina'],ing:['150 g filetto di salmone','200 g asparagi','1 cucchiaio olio EVO','limone, aglio, sale, pepe'],steps:'Disponi salmone e asparagi in teglia, condisci con olio, aglio e limone. Inforna a 200° per 15-18 min.'},
+  {id:'s4',n:'Overnight oats proteici ai frutti rossi',d:'Colazione pronta la sera prima: fibre, proteine ed energia a lento rilascio.',k:340,p:24,c:44,f:8,ic:'bowl',by:'Auréa',tags:['vegetariano','alta proteina'],ing:['50 g fiocchi d\'avena','150 ml latte (o vegetale)','1 misurino proteine','80 g frutti di bosco','1 cucchiaino semi di chia'],steps:'Mescola avena, latte, proteine e chia in un barattolo. Aggiungi i frutti rossi, chiudi e lascia in frigo tutta la notte.'},
+  {id:'s5',n:'Pollo alle mandorle e broccoli',d:'Secondo proteico e croccante, bilanciato per il recupero muscolare.',k:410,p:40,c:14,f:20,ic:'meat',by:'Auréa',tags:['mediterranea','senza glutine','senza lattosio','alta proteina'],ing:['150 g petto di pollo','200 g broccoli','20 g mandorle','1 cucchiaio olio EVO','salsa di soia, zenzero'],steps:'Rosola il pollo a strisce, aggiungi broccoli e un filo d\'acqua, cuoci coperto 6 min. Aggiungi mandorle, salsa di soia e zenzero.'},
+  {id:'s6',n:'Vellutata di lenticchie rosse',d:'Cremosa, calda e proteica: comfort food vegano ricco di ferro.',k:300,p:16,c:42,f:6,ic:'bowl',by:'Auréa',tags:['vegano','vegetariano','mediterranea','senza glutine','senza lattosio'],ing:['100 g lenticchie rosse','1 carota','1/2 cipolla','1 patata piccola','curcuma, cumino','olio EVO'],steps:'Soffriggi cipolla e carota, aggiungi lenticchie, patata, spezie e 400 ml acqua. Cuoci 20 min e frulla fino a crema liscia.'},
+  {id:'s7',n:'Yogurt greco, noci e miele',d:'Snack proteico da 5 minuti, ideale post-allenamento o merenda.',k:250,p:20,c:18,f:11,ic:'bowl',by:'Auréa',tags:['vegetariano','senza glutine','alta proteina'],ing:['170 g yogurt greco 0%','15 g noci','1 cucchiaino miele','cannella'],steps:'Versa lo yogurt in una ciotola, aggiungi noci spezzettate, un filo di miele e una spolverata di cannella.'},
+  {id:'s8',n:'Zoodle di zucchine al pesto e pomodorini',d:'Alternativa leggera alla pasta, low-carb e piena di gusto mediterraneo.',k:260,p:9,c:12,f:19,ic:'bowl',by:'Auréa',tags:['vegetariano','chetogenica','mediterranea','senza glutine'],ing:['2 zucchine (a spaghetti)','1 cucchiaio pesto','80 g pomodorini','10 g pinoli','parmigiano'],steps:'Crea gli spaghetti di zucchina con un pelapatate. Saltali 2 min in padella, condisci con pesto, pomodorini e pinoli tostati.'}
+];
+let CLOUD_RECIPES=[], _recLoaded=false, _recFetching=false;
+async function cloudLoadRecipes(){ if(!cloudOn()){CLOUD_RECIPES=[];return [];}
+  try{ const {data,error}=await SB.from('recipes').select('*').order('created_at',{ascending:false}); if(error)throw error;
+    CLOUD_RECIPES=(data||[]).map(r=>({id:r.id,owner:r.owner_id,n:r.name,d:r.descr||'',k:r.kcal||0,p:r.prot||0,c:r.carb||0,f:r.fat||0,by:r.author||'Utente',tags:r.tags||[],ing:r.ingredients||[],steps:r.steps||'',image:r.image||null,cloud:true}));
+    return CLOUD_RECIPES; }catch(e){ return CLOUD_RECIPES; } }
+async function cloudAddRecipe(o){ const row={owner_id:cloudUser.id,author:o.by,name:o.n,descr:o.d,kcal:o.k,prot:o.p,carb:o.c,fat:o.f,tags:o.tags,ingredients:o.ing,steps:o.steps,image:o.image};
+  const {data,error}=await SB.from('recipes').insert(row).select().single();
+  if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "recipes" su Supabase: esegui lo script SQL delle ricette.'); throw error; }
+  return data; }
+async function cloudDeleteRecipe(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('recipes').delete().eq('id',id); }catch(e){ return {error:e}; } }
+function allRecipes(){ return RECIPES_SEED.concat(CLOUD_RECIPES||[]); }
+function findRecipe(id){ return allRecipes().find(r=>String(r.id)===String(id)); }
+let _recFilter='Tutte', _recQ='';
+function recipeIcon(r){ const map={egg:'#ffe0b8',fish:'#bfe3ff',meat:'#ffcdd0',bowl:'#c9f0e0'}; const bg=map[r.ic]||'var(--mint)'; return `<div style="width:100%;height:120px;border-radius:16px 16px 0 0;background:${r.image?'#000':bg};display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--green-d)">${r.image?`<img src="${r.image}" style="width:100%;height:100%;object-fit:cover">`:ic(['egg','fish','meat','bowl'].includes(r.ic)?r.ic:'bowl',40)}</div>`; }
+function ricetteHTML(){
+  const filters=['Tutte'].concat(RECIPE_DIETS);
+  return `<button class="back" onclick="go('piano')">← Piano</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Idee sane, macro incluse</div><div class="n">${ic('bowl',22)} Ricette</div></div>
+    <button class="compose-btn" style="position:static" onclick="createRecipe()">${ic('plus',16)} Crea</button></div>
+  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('bowl',78)}</span><h4>Ricettario Auréa</h4><p>Ricette di Auréa, professionisti e community. Filtra per dieta e aggiungile al diario con un tocco.</p></div>
+  <div class="card" style="padding:12px;margin-bottom:12px">
+    <input id="rec-q" placeholder="Cerca una ricetta…" value="${(_recQ||'').replace(/"/g,'&quot;')}" oninput="_recQ=this.value;renderRecipes();setTimeout(()=>{const e=document.getElementById('rec-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;font-size:14px;margin-bottom:8px">
+    <div class="chips" id="rec-filters" style="flex-wrap:nowrap;overflow-x:auto">${filters.map(f=>`<button class="chip ${_recFilter===f?'sel':''}" onclick="_recFilter='${f}';renderRecipes();document.querySelectorAll('#rec-filters .chip').forEach(c=>c.classList.remove('sel'));this.classList.add('sel')">${f==='Tutte'?f:f.charAt(0).toUpperCase()+f.slice(1)}</button>`).join('')}</div>
+  </div>
+  <div id="rec-grid"></div>`;
+}
+function renderRecipes(){
+  const el=document.getElementById('rec-grid'); if(!el)return;
+  const q=(_recQ||'').trim().toLowerCase(); const f=_recFilter;
+  let list=allRecipes();
+  if(f!=='Tutte') list=list.filter(r=>(r.tags||[]).includes(f));
+  if(q) list=list.filter(r=>((r.n||'')+' '+(r.d||'')+' '+(r.ing||[]).join(' ')).toLowerCase().includes(q));
+  if(!list.length){ el.innerHTML=`<div class="card" style="text-align:center"><div style="color:var(--muted)">${ic('bowl',34)}</div><div class="sub" style="margin-top:6px">Nessuna ricetta${f!=='Tutte'?' per "'+f+'"':''}${q?' con "'+q+'"':''}. ${cloudOn()?'Crea la prima con “Crea”.':''}</div></div>`; return; }
+  el.innerHTML=`<div class="rec-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">`+list.map(r=>`
+    <div class="rec-card" onclick="openRecipe('${r.id}')" style="background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.04)">
+      ${recipeIcon(r)}
+      <div style="padding:10px 11px">
+        <div style="font-weight:700;font-size:13px;line-height:1.25;margin-bottom:4px">${r.n}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${r.k} kcal · ${r.p}g prot</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">${(r.tags||[]).slice(0,2).map(t=>`<span style="font-size:9px;background:var(--mint);color:var(--green-d);padding:2px 7px;border-radius:10px">${t}</span>`).join('')}</div>
+      </div>
+    </div>`).join('')+`</div>
+    <div class="tiny" style="margin-top:12px">${list.length} ricett${list.length===1?'a':'e'} · Le ricette della community sono create da utenti e professionisti Auréa.</div>`;
+}
+function openRecipe(id){ const r=findRecipe(id); if(!r)return;
+  const mine=r.cloud && cloudUser && r.owner===cloudUser.id;
+  const canDel=mine||isAdmin();
+  modalSheet(`<div class="grab"></div>
+    ${recipeIcon(r).replace('height:120px','height:150px')}
+    <h3 style="margin:12px 0 2px;font-size:18px">${r.n}</h3>
+    <div class="sub" style="margin-bottom:8px">${r.d||''}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${(r.tags||[]).map(t=>`<span style="font-size:10px;background:var(--mint);color:var(--green-d);padding:3px 9px;border-radius:12px">${t}</span>`).join('')}</div>
+    <div style="display:flex;gap:8px;text-align:center;margin-bottom:14px">
+      <div style="flex:1;background:var(--soft);border-radius:12px;padding:9px 4px"><div style="font-weight:800;font-size:16px">${r.k}</div><div style="font-size:10px;color:var(--muted)">kcal</div></div>
+      <div style="flex:1;background:var(--soft);border-radius:12px;padding:9px 4px"><div style="font-weight:800;font-size:16px">${r.p}</div><div style="font-size:10px;color:var(--muted)">prot</div></div>
+      <div style="flex:1;background:var(--soft);border-radius:12px;padding:9px 4px"><div style="font-weight:800;font-size:16px">${r.c}</div><div style="font-size:10px;color:var(--muted)">carb</div></div>
+      <div style="flex:1;background:var(--soft);border-radius:12px;padding:9px 4px"><div style="font-weight:800;font-size:16px">${r.f}</div><div style="font-size:10px;color:var(--muted)">grassi</div></div>
+    </div>
+    ${(r.ing&&r.ing.length)?`<div class="section-title" style="margin-top:0">Ingredienti</div><ul style="margin:0 0 14px;padding-left:18px;font-size:13px;line-height:1.7;color:var(--ink)">${r.ing.map(i=>`<li>${i}</li>`).join('')}</ul>`:''}
+    ${r.steps?`<div class="section-title">Preparazione</div><div class="sub" style="margin-bottom:14px;line-height:1.6">${r.steps}</div>`:''}
+    <div class="tiny" style="margin-bottom:12px">Ricetta di <b>${r.by||'Auréa'}</b></div>
+    <button class="btn" onclick="addRecipeToDiary('${r.id}')">${ic('plus',16)} Aggiungi al diario (${r.k} kcal)</button>
+    <button class="btn sec sm" style="margin-top:8px" onclick="shareRecipe('${r.id}')">Condividi in Community</button>
+    ${canDel?`<button class="btn sec sm" style="margin-top:8px;color:var(--coral)" onclick="delRecipe('${r.id}')">Elimina ricetta</button>`:''}
+    <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Chiudi</button>`);
+}
+function addRecipeToDiary(id){ const r=findRecipe(id); if(!r)return; logMeal(r.n,r.k,r.p,'Ricetta'); const box=document.querySelector('.app-modal'); if(box)box.remove(); toast('Aggiunta al diario · +'+r.k+' kcal'); }
+function delRecipe(id){ const r=findRecipe(id); if(!r)return; confirmBox('Eliminare la ricetta “'+r.n+'”?',async()=>{
+    if(r.cloud){ const {error}=await cloudDeleteRecipe(r.id); if(error){toast('Non eliminata: '+(error.message||error));return;} _recLoaded=false; await cloudLoadRecipes(); _recLoaded=true; }
+    const box=document.querySelector('.app-modal'); if(box)box.remove(); rebuild('ricette'); toast('Ricetta eliminata');
+  },{icon:'🗑️',yes:'Elimina',danger:true}); }
+async function shareRecipe(id){ const r=findRecipe(id); if(!r)return; const box=document.querySelector('.app-modal'); if(box)box.remove();
+  const cap=`${r.n} · ${r.k} kcal, ${r.p}g proteine ${(r.tags||[]).slice(0,2).map(t=>'#'+t.replace(/\s/g,'')).join(' ')}`;
+  const svg=recipeGraphic(r);
+  if(cloudOn()&&loggedIn()){
+    try{ const blob=new Blob([svg],{type:'image/svg+xml'}); const url=await uploadBlob(blob,'ricetta.svg');
+      const row={user_id:cloudUser.id,author:(S.user.name||'utente'),caption:cap,type:'Ricetta',diet:S.diet,goal:S.user.goal,video_url:url,likes:0,is_image:true};
+      let {error}=await SB.from('posts').insert(row); if(error&&/column/.test(error.message||'')){ delete row.is_image; const r2=await SB.from('posts').insert(row); error=r2.error; }
+      if(error)throw error;
+    }catch(e){ toast('Errore: '+(e.message||e)); return; }
+  } else {
+    MYSHORTS.unshift({id:'my'+Date.now(),user:(S.user.name||'io'),me:true,src:svgDataUrl(svg),isImage:true,caption:cap,type:'Ricetta',overlays:[],music:null,voiceover:null,muteOriginal:false,diet:S.diet,goal:S.user.goal,likes:0,liked:false});
+  }
+  save(); go('community'); comTab('perte'); toast('Ricetta condivisa! 🍽️');
+}
+function recipeGraphic(r){ const name=(r.n||'Ricetta').replace(/&/g,'&amp;');
+  const t1=name.length>22?name.slice(0,name.lastIndexOf(' ',22)||22):name;
+  const t2=name.length>22?name.slice((name.lastIndexOf(' ',22)||22)+1):'';
+  return `<svg xmlns='http://www.w3.org/2000/svg' width='540' height='720' viewBox='0 0 540 720'>
+    <defs><linearGradient id='rg' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#128a63'/><stop offset='1' stop-color='#4bd4a6'/></linearGradient></defs>
+    <rect width='540' height='720' rx='44' fill='url(#rg)'/>
+    <text x='270' y='96' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='30' font-weight='800' letter-spacing='5'>AURÉA</text>
+    <text x='270' y='126' text-anchor='middle' fill='rgba(255,255,255,.82)' font-family='Helvetica,Arial,sans-serif' font-size='16' letter-spacing='2'>RICETTA</text>
+    <text x='270' y='300' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='42' font-weight='800'>${t1}</text>
+    ${t2?`<text x='270' y='348' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='42' font-weight='800'>${t2}</text>`:''}
+    <text x='270' y='470' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='58' font-weight='800'>${r.k} kcal</text>
+    <text x='270' y='520' text-anchor='middle' fill='rgba(255,255,255,.9)' font-family='Helvetica,Arial,sans-serif' font-size='24' font-weight='700'>${r.p}g proteine · ${r.c}g carb · ${r.f}g grassi</text>
+    <text x='270' y='636' text-anchor='middle' fill='rgba(255,255,255,.8)' font-family='Helvetica,Arial,sans-serif' font-size='20'>di ${(r.by||'Auréa')}</text>
+  </svg>`;
+}
+function createRecipe(){
+  if(cloudOn()&&!loggedIn()){ toast('Accedi per creare una ricetta'); return; }
+  openForm({title:'Crea una ricetta',subtitle:'Condividi la tua ricetta con la community',
+    fields:[
+      {id:'img',type:'photo',label:'Foto (facoltativa)'},
+      {id:'n',label:'Nome ricetta',ph:'Es. Bowl proteica di pollo'},
+      {id:'d',label:'Descrizione breve',type:'textarea',ph:'Racconta il piatto in una riga'},
+      {id:'tipo',type:'select',label:'Tipo di dieta',options:['Mediterranea','Vegetariano','Vegano','Chetogenica','Alta proteina','Senza glutine','Senza lattosio']},
+      {id:'k',label:'Calorie (kcal)',type:'number',ph:'Es. 420'},
+      {id:'p',label:'Proteine (g)',type:'number',ph:'Es. 30'},
+      {id:'c',label:'Carboidrati (g)',type:'number',ph:'Es. 40'},
+      {id:'f',label:'Grassi (g)',type:'number',ph:'Es. 15'},
+      {id:'ing',label:'Ingredienti (uno per riga)',type:'textarea',ph:'150 g pollo\n80 g riso\n...'},
+      {id:'steps',label:'Preparazione',type:'textarea',ph:'Descrivi i passaggi'}
+    ],
+    submit:'Pubblica ricetta',
+    onSubmit:async(v)=>{
+      if(!(v.n||'').trim()){ toast('Inserisci il nome'); return false; }
+      const tagMap={'Mediterranea':'mediterranea','Vegetariano':'vegetariano','Vegano':'vegano','Chetogenica':'chetogenica','Alta proteina':'alta proteina','Senza glutine':'senza glutine','Senza lattosio':'senza lattosio'};
+      const tags=[tagMap[v.tipo]||'mediterranea']; if(v.tipo==='Vegano'&&!tags.includes('vegetariano'))tags.push('vegetariano');
+      const rec={n:v.n.trim(),d:(v.d||'').trim(),k:Math.round(+v.k||0),p:Math.round(+v.p||0),c:Math.round(+v.c||0),f:Math.round(+v.f||0),by:(S.user.name||'Utente'),tags,ing:(v.ing||'').split('\n').map(x=>x.trim()).filter(Boolean),steps:(v.steps||'').trim(),image:v.img||null};
+      if(cloudOn()&&loggedIn()){
+        try{ toast('Pubblicazione…'); await cloudAddRecipe(rec); _recLoaded=false; await cloudLoadRecipes(); _recLoaded=true; }
+        catch(e){ toast('Errore: '+(e.message||e)); return false; }
+      } else {
+        rec.id='loc'+Date.now(); rec.cloud=false; CLOUD_RECIPES.unshift(rec);
+      }
+      rebuild('ricette'); toast('Ricetta pubblicata! 🍽️'); return true;
+    }
+  });
+}
+
 /* ===== MODALITÀ PROFESSIONISTA ===== */
 // Una volta registrato come professionista resta tale finché non preme "Ritira profilo".
 function isProMode(){ return !!S.pro; }
@@ -3094,7 +3249,7 @@ function ricercaHTML(){
 }
 function searchTag(t){ _searchQ='#'+t; _searchFilter='Hashtag'; go('ricerca'); setTimeout(runSearch,60); }
 function loadSearchData(){
-  if(cloudOn()){ if(!_docsLoaded)cloudLoadDocs().then(()=>{_docsLoaded=true;runSearch();}); if(!_wkLoaded)cloudLoadWorkouts().then(()=>{_wkLoaded=true;runSearch();}); cloudFeed().then(ps=>{SEARCH_POSTS=ps;runSearch();}); }
+  if(cloudOn()){ if(!_docsLoaded)cloudLoadDocs().then(()=>{_docsLoaded=true;runSearch();}); if(!_wkLoaded)cloudLoadWorkouts().then(()=>{_wkLoaded=true;runSearch();}); if(!_recLoaded)cloudLoadRecipes().then(()=>{_recLoaded=true;runSearch();}); cloudFeed().then(ps=>{SEARCH_POSTS=ps;runSearch();}); }
   runSearch();
 }
 function runSearch(){
@@ -3126,7 +3281,11 @@ function runSearch(){
     if(tagged.length&&f==='Hashtag') html+=`<div class="section-title">Post con "#${q}"</div>`+tagged.slice(0,12).map(p=>`<div class="row" onclick="go('community');comTab('perte')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">#</div><div class="rt"><b>${(p.caption||'').slice(0,50)}</b><small>@${p.author||'utente'}</small></div><div class="rv">›</div></div>`).join('');
   }
   // Ricette
-  if(f==='Ricette'){ html+=`<div class="card" style="text-align:center"><div class="sub">Le ricette arrivano nella prossima fase. Presto potrai cercarle qui per tipo (vegano, cheto, mediterranea…).</div></div>`; }
+  if(f==='Tutti'||f==='Ricette'){
+    const recs=allRecipes().filter(r=>((r.n||'')+' '+(r.d||'')+' '+(r.tags||[]).join(' ')+' '+(r.ing||[]).join(' ')).toLowerCase().includes(q));
+    if(recs.length) html+=`<div class="section-title">Ricette</div>`+recs.slice(0,12).map(r=>`<div class="row" onclick="openRecipe('${r.id}')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic(['egg','fish','meat','bowl'].includes(r.ic)?r.ic:'bowl',20)}</div><div class="rt" style="flex:1"><b>${r.n}</b><small>${r.k} kcal · ${r.p}g prot · ${(r.tags||[])[0]||''}</small></div><div class="rv">›</div></div>`).join('');
+    if(f==='Ricette'&&!recs.length) html+=`<div class="card" style="text-align:center"><div class="sub">Nessuna ricetta per "${_searchQ}". <a onclick="go('ricette')" style="color:var(--green-d);font-weight:700;cursor:pointer">Sfoglia il ricettario →</a></div></div>`;
+  }
   el.innerHTML=html||`<div class="card" style="text-align:center"><div class="sub">Nessun risultato per "${_searchQ}". ${cloudOn()?'':'Attiva la modalità reale per cercare tra i contenuti.'}</div></div>`;
 }
 function communityHTML(){
@@ -4399,7 +4558,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML, ricette:ricetteHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -4424,6 +4583,7 @@ function afterRender(id){
   if(id==='clientchat'){renderChat();}
   if(id==='clientplans'){renderPlans();}
   if(id==='ricerca'){loadSearchData();}
+  if(id==='ricette'){ renderRecipes(); if(cloudOn()&&!_recLoaded&&!_recFetching){ _recFetching=true; cloudLoadRecipes().then(()=>{ _recLoaded=true; _recFetching=false; if(curScreen==='ricette')renderRecipes(); }); } }
   if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); checkMilestones(false); checkChallenges(); checkBadges(true); save(); } }catch(e){} }
 }
 function boot(){
