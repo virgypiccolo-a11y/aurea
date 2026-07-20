@@ -4804,9 +4804,15 @@ async function authRegister(btn){
   if(!hk||!hk.checked){toast('Devi acconsentire al trattamento dei dati sulla salute');return;}
   S.consent={age18:true,terms:true,health:true,marketing:!!(mk&&mk.checked),version:POLICY_VERSION,at:new Date().toISOString()};
   const done=btnBusy(btn,'Creazione account…');
-  try{ await cloudSignUp(e,p); if(n)S.user.name=n;
+  try{ const res=await cloudSignUp(e,p); if(n){S.user.name=n;S.user.initials=n.trim()[0].toUpperCase();}
     cloudLogConsent('signup',S.consent);
-    document.getElementById('auth-forms').innerHTML=`<div class="alert ok" style="margin:0"><span>📧</span><div><b>Account creato per ${e}.</b> Se la verifica via email è attiva, apri la mail e premi il link di conferma, poi torna qui e tocca "Accedi".</div></div><button class="btn" style="margin-top:14px" onclick="authTab('login')">Vai al login</button>`;
+    if(res&&res.session){
+      // verifica email disattivata: l'utente è già attivo → entra subito
+      hideAuthWall(); rebuildAll(); if(!S.setup){showOnboard();}else{go('home');} preloadCloud(); toast('Account creato ✓ Benvenuta!');
+    } else {
+      // verifica email attiva: mostra il messaggio di conferma
+      document.getElementById('auth-forms').innerHTML=`<div class="alert ok" style="margin:0"><span>📧</span><div><b>Account creato per ${e}.</b> Apri la mail di verifica e premi il link di conferma, poi torna qui e tocca "Accedi".</div></div><button class="btn" style="margin-top:14px" onclick="authTab('login')">Vai al login</button>`;
+    }
   }catch(err){ done(); const m=(err&&err.message)||'';
     if(/already registered|already exists|user already/i.test(m)) toast('Questa email è già registrata. Vai su "Accedi".');
     else toast('Errore: '+m);
