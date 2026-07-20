@@ -441,6 +441,8 @@ const S = {
   wStart:69.0, wNow:64.5, wGoal:60.0, wWeeks:12,
   disliked:[],
   cycleTracking:true,
+  scoreHistory:[],
+  moodToday:null,
   planChoices:{},
   cart:[],
   reminders:[
@@ -532,7 +534,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -961,6 +963,7 @@ function renderCartBadge(){
 }
 /* menu con tutte le funzioni */
 const MENU=[
+  {id:'score',icn:'sparkle',l:'Aurea Score'},
   {id:'community',icn:'users',l:'Community'},
   {id:'ciclo',icn:'flower',l:'Ciclo',fem:true},
   {id:'recupero',icn:'rainbow',l:'Recupero'},
@@ -994,6 +997,113 @@ const V=document.getElementById('viewport');
 function screen(id,html){const d=document.createElement('div');d.className='screen';d.id='sc-'+id;d.innerHTML=html;V.appendChild(d);}
 
 /* ---------- HOME ---------- */
+/* ============ AURÉA SCORE (0-100) ============ */
+const SCORE_W={alimentazione:25,attivita:20,sonno:20,idratazione:10,umore:10,costanza:15};
+const SCORE_META={
+  alimentazione:{icn:'piano',col:'var(--green-d)',bg:'var(--mint)',l:'Alimentazione'},
+  attivita:{icn:'steps',col:'var(--blue)',bg:'#e8f1ff',l:'Attività'},
+  sonno:{icn:'moon',col:'var(--violet)',bg:'var(--violet-s)',l:'Sonno'},
+  idratazione:{icn:'drop',col:'#2a9adf',bg:'#e8f6ff',l:'Idratazione'},
+  umore:{icn:'heart',col:'var(--coral)',bg:'var(--coral-s)',l:'Umore'},
+  costanza:{icn:'flame',col:'#c8781f',bg:'#fff0e0',l:'Costanza'}
+};
+function _sc(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function todayKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function scoreStreak(){ const h=(S.scoreHistory||[]).map(x=>x.date).slice().sort(); if(!h.length)return 0; let streak=1; for(let i=h.length-1;i>0;i--){ const diff=Math.round((new Date(h[i]+'T00:00')-new Date(h[i-1]+'T00:00'))/86400000); if(diff===1)streak++; else if(diff===0)continue; else break; } return streak; }
+function aureaBreakdown(){
+  const wp=weightPlan(); const target=wp.kcal||S.user.kcalGoal||1800; const b={};
+  b.alimentazione = (S.intake&&S.intake.kcal>0) ? _sc(Math.round(100-Math.abs(S.intake.kcal-target)/target*200),0,100) : null;
+  let act=_sc(Math.round((S.steps||0)/(S.stepsGoal||10000)*100),0,100); if((S.workoutKcal||0)>0)act=Math.min(100,act+20); b.attivita=act;
+  if(S.sleep==null) b.sonno=null; else { const need=sleepNeeded(); b.sonno = S.sleep>=need.ideal?100:(S.sleep>=need.min?85:_sc(Math.round(S.sleep/need.min*85),0,85)); }
+  b.idratazione = _sc(Math.round((S.water||0)/(S.waterGoal||8)*100),0,100);
+  b.umore = (S.moodToday!=null) ? _sc(Math.round(S.moodToday/5*100),0,100) : null;
+  const tt=S.today||[]; const doneR=tt.length?tt.filter(x=>x.done).length/tt.length:0; b.costanza=_sc(Math.round(doneR*60+Math.min(scoreStreak(),10)/10*40),0,100);
+  return b;
+}
+function aureaScore(){ const b=aureaBreakdown(); let tw=0,ts=0; Object.keys(SCORE_W).forEach(k=>{ if(b[k]!=null){ tw+=SCORE_W[k]; ts+=b[k]*SCORE_W[k]; } }); return {score:tw?Math.round(ts/tw):0,breakdown:b}; }
+function scoreColor(s){ return s>=75?'var(--green)':(s>=50?'var(--amber,#e0a12e)':'var(--coral)'); }
+function saveScoreToday(){ const r=aureaScore(); S.scoreHistory=S.scoreHistory||[]; const tk=todayKey(); const i=S.scoreHistory.findIndex(x=>x.date===tk); const rec={date:tk,score:r.score,breakdown:r.breakdown}; if(i>=0)S.scoreHistory[i]=rec; else S.scoreHistory.push(rec); if(S.scoreHistory.length>60)S.scoreHistory=S.scoreHistory.slice(-60); return r; }
+function scoreYesterday(){ const h=S.scoreHistory||[]; const tk=todayKey(); const past=h.filter(x=>x.date!==tk); return past.length?past[past.length-1].score:null; }
+function scoreDelta(){ const y=scoreYesterday(); if(y==null)return null; return aureaScore().score-y; }
+function scoreSuggestion(){ const b=aureaBreakdown();
+  // trova il componente presente col punteggio più basso e proponi un'azione
+  const acts={ idratazione:{t:'Bevi 2 bicchieri d\'acqua',go:"setWaterHome()"}, sonno:{t:'Registra (e punta a 7-8h di) sonno',go:"setSleep()"}, attivita:{t:'Fai due passi in più oggi',go:"setStepsManual()"}, alimentazione:{t:'Completa il diario dei pasti',go:"go('diario')"}, umore:{t:'Registra come ti senti oggi',go:"go('score')"}, costanza:{t:'Completa un\'attività di oggi',go:"go('planning')"} };
+  let worst=null,wv=101; Object.keys(b).forEach(k=>{ const v=(b[k]==null?0:b[k]); if(v<wv){wv=v;worst=k;} });
+  return worst?{comp:worst,...acts[worst],val:b[worst]}:null;
+}
+function setMoodToday(v){ S.moodToday=v; save(); saveScoreToday(); rebuild('score'); rebuild('home'); toast('Umore registrato'); }
+function scoreCardHome(){ const r=saveScoreToday(); const d=scoreDelta(); const col=scoreColor(r.score);
+  return `<div class="card" onclick="go('score')" style="cursor:pointer">
+    <div class="ring-wrap">
+      <div class="ring" style="width:104px;height:104px;flex:0 0 104px">${ring(r.score/100,col,104,12)}<div class="c-val"><b style="font-size:30px">${r.score}</b><small>Aurea Score</small></div></div>
+      <div style="flex:1">
+        <div class="h" style="margin-bottom:4px">Il tuo benessere oggi ${d!=null?`<span class="pill" style="background:${d>=0?'var(--mint)':'var(--coral-s)'};color:${d>=0?'var(--green-d)':'#d63a5c'}">${d>=0?'▲ +'+d:'▼ '+d} vs ieri</span>`:'<span class="pill">nuovo</span>'}</div>
+        <div class="sub">${r.score>=75?'Ottimo! Stai avendo cura di te.':(r.score>=50?'Buon ritmo, puoi ancora salire.':'Piccoli passi: migliora un\'abitudine oggi.')}</div>
+        <div class="sub" style="color:var(--green-d);font-weight:700;margin-top:6px">Vedi dettagli →</div>
+      </div>
+    </div>
+  </div>`;
+}
+function scoreHTML(){
+  const r=saveScoreToday(); const b=r.breakdown; const d=scoreDelta(); const col=scoreColor(r.score); const sug=scoreSuggestion();
+  const hist=(S.scoreHistory||[]).slice(-7);
+  // sparkline
+  let spark=''; if(hist.length>=2){ const w=280,h=54,max=100; const step=w/(hist.length-1); const pts=hist.map((x,i)=>`${(i*step).toFixed(0)},${(h-(x.score/max)*h).toFixed(0)}`).join(' '); spark=`<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${hist.map((x,i)=>`<circle cx="${(i*step).toFixed(0)}" cy="${(h-(x.score/100)*h).toFixed(0)}" r="3" fill="var(--green-d)"/>`).join('')}</svg>`; }
+  const avg=hist.length?Math.round(hist.reduce((a,x)=>a+x.score,0)/hist.length):r.score;
+  const best=(S.scoreHistory||[]).reduce((m,x)=>Math.max(m,x.score),0);
+  return `<button class="back" onclick="go('home')">← Home</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Il filo del tuo benessere</div><div class="n">Aurea Score</div></div></div>
+
+  <div class="card" style="text-align:center">
+    <div class="ring" style="width:150px;height:150px;flex:0 0 150px;margin:6px auto 0">${ring(r.score/100,col,150,14)}<div class="c-val"><b style="font-size:44px">${r.score}</b><small>su 100</small></div></div>
+    <div style="margin-top:8px">${d!=null?`<span class="pill" style="background:${d>=0?'var(--mint)':'var(--coral-s)'};color:${d>=0?'var(--green-d)':'#d63a5c'};font-size:12px">${d>=0?'▲ +'+d:'▼ '+d} rispetto a ieri</span>`:'<span class="pill">Primo giorno · continua a registrare i tuoi dati</span>'}</div>
+    <div class="sub" style="margin-top:10px">${scorePhrase(r.score,b,d)}</div>
+  </div>
+
+  ${sug?`<div class="card" style="border:1.5px solid var(--green);box-shadow:none;background:var(--mint)"><div class="h" style="font-size:14px">✨ Un'azione per salire</div><div class="sub" style="margin-bottom:10px">${sug.t}.</div><button class="btn sm" onclick="${sug.go}">Fallo ora →</button></div>`:''}
+
+  <div class="card">
+    <div class="h">Da cosa nasce il punteggio</div>
+    ${Object.keys(SCORE_W).map(k=>{ const m=SCORE_META[k]; const v=b[k]; const miss=v==null; const val=miss?0:v; return `<div class="row" style="align-items:center">
+      <div class="ri" style="background:${m.bg};color:${m.col}">${ic(m.icn,20)}</div>
+      <div class="rt" style="flex:1"><b>${m.l}</b><div class="bar" style="height:8px;margin-top:6px"><i style="width:${val}%;background:${m.col}"></i></div></div>
+      <div class="rv" style="min-width:52px;text-align:right">${miss?'<span class="sub" style="font-size:11px">da inserire</span>':'<b>'+v+'</b>'}</div>
+    </div>`; }).join('')}
+    <div class="tiny" style="margin-top:8px">Se un dato manca non abbassa il punteggio: inseriscilo per uno Score più preciso.</div>
+  </div>
+
+  <div class="card">
+    <div class="h">Come ti senti oggi?</div>
+    <div class="chips" style="margin-top:6px">${[['😣',1],['😞',2],['😐',3],['🙂',4],['😀',5]].map(([e,v])=>`<button class="chip ${S.moodToday===v?'sel':''}" style="font-size:20px;padding:8px 12px" onclick="setMoodToday(${v})">${e}</button>`).join('')}</div>
+  </div>
+
+  <div class="card">
+    <div class="h">Andamento · ultimi ${hist.length} giorni</div>
+    ${spark||'<div class="sub">Registra i tuoi dati per qualche giorno e qui vedrai il tuo andamento.</div>'}
+    <div class="grid3" style="margin-top:12px">
+      <div style="text-align:center"><div style="font-size:20px;font-weight:800">${r.score}</div><div class="sub" style="font-size:11px">oggi</div></div>
+      <div style="text-align:center"><div style="font-size:20px;font-weight:800">${avg}</div><div class="sub" style="font-size:11px">media 7gg</div></div>
+      <div style="text-align:center"><div style="font-size:20px;font-weight:800">${best}</div><div class="sub" style="font-size:11px">record</div></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <button class="btn sec sm" onclick="go('planning')">Il tuo oggi</button>
+    <button class="btn sm" onclick="go('community')">Condividi i progressi</button>
+  </div>
+  <div class="tiny" style="margin-top:10px">Lo Score si aggiorna in tempo reale mentre registri pasti, passi, sonno, acqua e umore.</div>`;
+}
+function scorePhrase(score,b,d){
+  const present=Object.keys(b).filter(k=>b[k]!=null);
+  let best=null,bv=-1,worst=null,wv=101;
+  present.forEach(k=>{ if(b[k]>bv){bv=b[k];best=k;} if(b[k]<wv){wv=b[k];worst=k;} });
+  const L=k=>SCORE_META[k]?SCORE_META[k].l.toLowerCase():k;
+  if(score>=85) return 'Giornata da incorniciare: continua così! 💚';
+  let s=(d!=null&&d>0)?'In crescita rispetto a ieri. ':'';
+  if(best&&worst&&best!==worst) s+='Bene su '+L(best)+', ti manca qualcosa su '+L(worst)+'.';
+  else if(worst) s+='Puoi migliorare su '+L(worst)+'.';
+  return s||'Continua a registrare i tuoi dati per uno Score più preciso.';
+}
 function homeHTML(){
   if(isProMode()) return proDashHTML();
   const wp=weightPlan();
@@ -1004,6 +1114,8 @@ function homeHTML(){
     <div class="hello"><div class="k">Domenica, 19 luglio</div><div class="n">Ciao, ${S.user.name} <span style="color:var(--amber);vertical-align:-3px;display:inline-block">${ic('sparkle',19)}</span></div></div>
     <div class="avatar" onclick="go('profilo')">${S.user.initials}</div>
   </div>
+
+  ${scoreCardHome()}
 
   <div class="card">
     <div class="ring-wrap">
@@ -4028,7 +4140,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -4052,6 +4164,7 @@ function afterRender(id){
   if(id==='allenamento'){ if(cloudOn()&&!_wkLoaded&&!_wkFetching){ _wkFetching=true; cloudLoadWorkouts().then(()=>{ _wkLoaded=true; _wkFetching=false; if(curScreen==='allenamento')rebuild('allenamento'); }); } }
   if(id==='clientchat'){renderChat();}
   if(id==='clientplans'){renderPlans();}
+  if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); save(); } }catch(e){} }
 }
 function boot(){
   restore();
