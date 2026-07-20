@@ -2503,37 +2503,74 @@ function deleteWorkout(id){ confirmBox('Eliminare questo video di allenamento?',
   else { S.customWorkouts=(S.customWorkouts||[]).filter(w=>w.id!==id); save(); }
   rebuild('allenamento'); toast('Video eliminato'); },{icon:'🎬',yes:'Elimina',danger:true}); }
 /* ===== CHAT CLIENTI ↔ PROFESSIONISTI ===== */
-let CHAT_MSGS=[];
-async function cloudLoadMessages(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('messages').select('*').or('from_id.eq.'+cloudUser.id+',to_id.eq.'+cloudUser.id).order('created_at',{ascending:true}); if(error)throw error; CHAT_MSGS=data||[]; return CHAT_MSGS; }catch(e){ return CHAT_MSGS; } }
-async function cloudSendMessage(toId,toName,text){ const row={from_id:cloudUser.id,to_id:toId,from_name:((S.pro&&S.pro.name)||S.user.name||'utente'),to_name:toName||'',text:text}; const {error}=await SB.from('messages').insert(row); if(error)throw error; }
-function chatThreads(){ const map={}; CHAT_MSGS.forEach(m=>{ const meFrom=m.from_id===cloudUser.id; const other=meFrom?m.to_id:m.from_id; const oname=meFrom?(m.to_name||'Cliente'):(m.from_name||'Cliente'); if(!map[other])map[other]={id:other,name:oname}; if(!meFrom)map[other].name=m.from_name||map[other].name; map[other].last=m.text; }); return Object.values(map); }
-function openChatWith(id,name){ if(!id){toast('Chat non disponibile');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per messaggiare');go('cloud');return;} S._chatWith={id:id,name:name||'Cliente'}; go('clientchat'); }
+let CHAT_MSGS=[], CHAT_GROUPS=[];
+async function cloudLoadMessages(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('messages').select('*').order('created_at',{ascending:true}); if(error)throw error; CHAT_MSGS=data||[]; return CHAT_MSGS; }catch(e){ return CHAT_MSGS; } }
+async function cloudLoadGroups(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('chat_groups').select('*').order('created_at',{ascending:false}); if(error)throw error; CHAT_GROUPS=data||[]; return CHAT_GROUPS; }catch(e){ return CHAT_GROUPS; } }
+async function cloudSendMessage(o){ const row={from_id:cloudUser.id,from_name:((S.pro&&S.pro.name)||S.user.name||'utente'),to_name:o.toName||'',text:o.text||''};
+  if(o.groupId){ row.group_id=o.groupId; } else { row.to_id=o.toId; }
+  if(o.attachment){ row.attachment=o.attachment; row.attach_type=o.attachType||'file'; }
+  let {error}=await SB.from('messages').insert(row);
+  if(error&&/column|schema cache|could not find/i.test(error.message||'')){ delete row.attachment; delete row.attach_type; const r2=await SB.from('messages').insert(row); error=r2.error; }
+  if(error)throw error; }
+async function cloudCreateGroup(name,emails){ const row={name:name,owner_id:cloudUser.id,members:emails}; const {data,error}=await SB.from('chat_groups').insert(row).select().single(); if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "chat_groups": esegui lo script SQL della chat.'); throw error; } return data; }
+async function cloudDeleteGroup(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('chat_groups').delete().eq('id',id); }catch(e){ return {error:e}; } }
+function chatThreads(){ const map={}; CHAT_MSGS.forEach(m=>{ if(m.group_id)return; const meFrom=m.from_id===cloudUser.id; const other=meFrom?m.to_id:m.from_id; if(!other)return; const oname=meFrom?(m.to_name||'Cliente'):(m.from_name||'Cliente'); if(!map[other])map[other]={id:other,name:oname}; if(!meFrom)map[other].name=m.from_name||map[other].name; map[other].last=m.text||(m.attachment?'📎 Allegato':''); }); return Object.values(map); }
+function groupThreads(){ return (CHAT_GROUPS||[]).map(g=>{ const msgs=CHAT_MSGS.filter(m=>m.group_id===g.id); const last=msgs[msgs.length-1]; return {id:g.id,name:g.name,group:true,members:g.members||[],owner:g.owner_id,last:last?((last.from_name||'')+': '+(last.text||'📎')):'Nuovo gruppo · scrivi il primo messaggio'}; }); }
+function openChatWith(id,name,group){ if(!id){toast('Chat non disponibile');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per messaggiare');go('cloud');return;} S._chatWith={id:id,name:name||'Cliente',group:!!group}; if(curScreen==='clientchat'){rebuild('clientchat');}else{go('clientchat');} }
+function backToThreads(){ S._chatWith=null; rebuild('clientchat'); }
+function chatSendPayload(extra){ const w=S._chatWith; const base=w.group?{groupId:w.id,toName:w.name}:{toId:w.id,toName:w.name}; return Object.assign(base,extra); }
 function clientchatHTML(){
   if(!(cloudOn()&&loggedIn())) return `<button class="back" onclick="go('${isProMode()?'home':'prenota'}')">← Indietro</button><div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Messaggi</div><div class="n">💬 Chat</div></div></div><div class="card" style="text-align:center"><div class="sub">Accedi per usare la chat.</div></div>`;
-  if(S._chatWith){ const w=S._chatWith;
-    return `<button class="back" onclick="S._chatWith=null;go('clientchat')">← Conversazioni</button>
-    <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Conversazione con</div><div class="n">💬 ${w.name}</div></div></div>
-    <div class="chat" id="chat-thread" style="min-height:46vh"></div>
-    <div class="chatbar"><input id="chat-msg" placeholder="Scrivi un messaggio…" onkeydown="if(event.key==='Enter')sendClientMsg()"><button onclick="sendClientMsg()">➤</button></div>`;
+  if(S._chatWith){ const w=S._chatWith; const g=w.group?(CHAT_GROUPS||[]).find(x=>x.id===w.id):null; const isOwner=g&&cloudUser&&g.owner_id===cloudUser.id;
+    return `<button class="back" onclick="backToThreads()">← Conversazioni</button>
+    <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${w.group?((g&&(g.members||[]).length)||0)+' membri':'Conversazione con'}</div><div class="n">${w.group?ic('users',20):'💬'} ${w.name}</div></div>
+      ${isOwner?`<button class="avatar" style="border:none" onclick="deleteGroup(${w.id})">🗑️</button>`:''}</div>
+    <div class="chat" id="chat-thread" style="min-height:44vh"></div>
+    <div class="chatbar"><button onclick="attachChat()" style="background:var(--mint);color:var(--green-d)" title="Allega">📎</button><input id="chat-msg" placeholder="Scrivi un messaggio…" onkeydown="if(event.key==='Enter')sendClientMsg()"><button onclick="sendClientMsg()">➤</button></div>`;
   }
   return `<button class="back" onclick="go('${isProMode()?'home':'prenota'}')">← Indietro</button>
-  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${isProMode()?'I tuoi clienti':'I professionisti'}</div><div class="n">💬 Chat</div></div></div>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Messaggi e gruppi</div><div class="n">💬 Chat</div></div></div>
+  <button class="btn ghost sm" style="margin-bottom:12px" onclick="createGroup()">＋ Crea un gruppo</button>
   <div id="chat-threads"><div class="card"><div class="sub">Caricamento…</div></div></div>`;
 }
+function chatMsgHtml(m,isGroup){ const me=m.from_id===cloudUser.id; let inner='';
+  if(m.attachment){ const isImg=(m.attach_type||'').indexOf('image')===0||/\.(png|jpe?g|gif|webp)(\?|$)/i.test(m.attachment);
+    inner+=isImg?`<img src="${m.attachment}" style="max-width:180px;border-radius:12px;display:block;cursor:pointer;margin-bottom:${m.text?'6px':'0'}" onclick="window.open('${m.attachment}','_blank')">`:`<a href="${m.attachment}" target="_blank" style="color:inherit;text-decoration:underline">📎 Allegato</a>${m.text?'<br>':''}`; }
+  if(m.text) inner+=(m.text||'').replace(/</g,'&lt;');
+  const sender=(isGroup&&!me)?`<div style="font-size:10px;font-weight:700;opacity:.65;margin-bottom:2px">${(m.from_name||'Utente').replace(/</g,'&lt;')}</div>`:'';
+  return `<div class="msg ${me?'me':'ai'}">${sender}${inner}</div>`; }
 function renderChat(){
   if(!(cloudOn()&&loggedIn()))return;
-  cloudLoadMessages().then(()=>{
+  Promise.all([cloudLoadMessages(),cloudLoadGroups()]).then(()=>{
     if(S._chatWith){ const box=document.getElementById('chat-thread'); if(!box)return; const w=S._chatWith;
-      const msgs=CHAT_MSGS.filter(m=>(m.from_id===cloudUser.id&&m.to_id===w.id)||(m.from_id===w.id&&m.to_id===cloudUser.id));
-      box.innerHTML=msgs.length?msgs.map(m=>`<div class="msg ${m.from_id===cloudUser.id?'me':'ai'}">${(m.text||'').replace(/</g,'&lt;')}</div>`).join(''):'<div class="sub" style="text-align:center;padding:20px">Nessun messaggio. Scrivi per iniziare.</div>';
+      const msgs=w.group?CHAT_MSGS.filter(m=>m.group_id===w.id):CHAT_MSGS.filter(m=>(m.from_id===cloudUser.id&&m.to_id===w.id)||(m.from_id===w.id&&m.to_id===cloudUser.id));
+      box.innerHTML=msgs.length?msgs.map(m=>chatMsgHtml(m,w.group)).join(''):'<div class="sub" style="text-align:center;padding:20px">Nessun messaggio. Scrivi per iniziare.</div>';
       box.scrollTop=box.scrollHeight;
-    } else { const c=document.getElementById('chat-threads'); if(!c)return; const th=chatThreads();
-      c.innerHTML=th.length?th.map(t=>`<div class="row" onclick="openChatWith('${t.id}','${(t.name||'').replace(/'/g,"\\'")}')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('users',22)}</div><div class="rt"><b>${t.name||'Cliente'}</b><small>${(t.last||'').slice(0,40)}</small></div><div class="rv">›</div></div>`).join(''):`<div class="card" style="text-align:center"><div style="font-size:40px">💬</div><div class="sub">Ancora nessuna conversazione. ${isProMode()?'I clienti che ti scrivono compariranno qui.':'Scrivi a un professionista dalla sua scheda in Prenota.'}</div></div>`;
+    } else { const c=document.getElementById('chat-threads'); if(!c)return; const grps=groupThreads(); const th=chatThreads(); let html='';
+      if(grps.length) html+=`<div class="section-title" style="margin-top:0">Gruppi</div>`+grps.map(t=>`<div class="row" onclick="openChatWith(${t.id},'${(t.name||'').replace(/'/g,"\\'")}',true)" style="cursor:pointer"><div class="ri" style="background:var(--violet-s);color:var(--violet)">${ic('users',22)}</div><div class="rt" style="flex:1"><b>${t.name}</b><small>${(t.last||'').slice(0,44)}</small></div><div class="rv">›</div></div>`).join('');
+      if(th.length) html+=`${grps.length?'<div class="section-title">Conversazioni</div>':''}`+th.map(t=>`<div class="row" onclick="openChatWith('${t.id}','${(t.name||'').replace(/'/g,"\\'")}')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('user',22)}</div><div class="rt" style="flex:1"><b>${t.name||'Cliente'}</b><small>${(t.last||'').slice(0,44)}</small></div><div class="rv">›</div></div>`).join('');
+      c.innerHTML=html||`<div class="card" style="text-align:center"><div style="font-size:40px">💬</div><div class="sub">Ancora nessuna conversazione. ${isProMode()?'I clienti che ti scrivono compariranno qui.':'Scrivi a un professionista dalla sua scheda in Prenota, o crea un gruppo.'}</div></div>`;
     }
   });
 }
 async function sendClientMsg(){ const el=document.getElementById('chat-msg'); const t=(el&&el.value||'').trim(); if(!t||!S._chatWith)return; el.value='';
-  try{ await cloudSendMessage(S._chatWith.id,S._chatWith.name,t); renderChat(); }catch(e){ toast('Invio non riuscito: '+(e.message||e)); } }
+  try{ await cloudSendMessage(chatSendPayload({text:t})); renderChat(); }catch(e){ toast('Invio non riuscito: '+(e.message||e)); } }
+function attachChat(){ if(!S._chatWith)return; fileFallback(async(dataUrl,file)=>{ if(!file)return; toast('Invio allegato…'); try{ const url=await uploadBlob(file,file.name||'allegato'); await cloudSendMessage(chatSendPayload({attachment:url,attachType:file.type||'file'})); renderChat(); }catch(e){ toast('Allegato non inviato: '+(e.message||e)); } },'*/*'); }
+function createGroup(){ if(!(cloudOn()&&loggedIn())){toast('Accedi per creare un gruppo');go('cloud');return;}
+  openForm({title:'Nuovo gruppo',subtitle:'Aggiungi i membri con la loro email Auréa',
+    fields:[{id:'name',label:'Nome del gruppo',ph:'es. Team benessere'},{id:'emails',label:'Email dei membri (una per riga)',type:'textarea',ph:'mario@email.com\nlucia@email.com'}],
+    submit:'Crea gruppo',
+    onSubmit:async(v)=>{ const nm=(v.name||'').trim(); if(!nm){toast('Inserisci il nome');return false;}
+      const emails=(v.emails||'').split(/[\n,]/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+      const myEmail=(cloudUser.email||'').toLowerCase(); if(myEmail&&!emails.includes(myEmail))emails.push(myEmail);
+      try{ await cloudCreateGroup(nm,emails); await cloudLoadGroups(); renderChat(); toast('Gruppo creato ✓'); }catch(e){ toast('Errore: '+(e.message||e)); return false; }
+    }
+  });
+}
+function deleteGroup(id){ confirmBox('Eliminare questo gruppo e tutti i suoi messaggi?',async()=>{
+    const {error}=await cloudDeleteGroup(id); if(error){toast('Non eliminato: '+(error.message||error));return;}
+    S._chatWith=null; await cloudLoadGroups(); rebuild('clientchat'); toast('Gruppo eliminato');
+  },{icon:'🗑️',yes:'Elimina',danger:true}); }
 /* ===== PIANI NUTRIZIONALI PER I CLIENTI ===== */
 async function cloudLoadPlans(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('plans').select('*').order('created_at',{ascending:false}); if(error)throw error; return data||[]; }catch(e){ return []; } }
 function clientplansHTML(){
