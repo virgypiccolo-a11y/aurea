@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="google-site-verification" content="awEdacvnryrptEHDM3MP8F-dRQmYcZvKpcKkp2FmHCE" />
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Auréa">
@@ -3534,7 +3535,7 @@ function runSearch(){
   if(f==='Tutti'||f==='Utenti'){
     const seen={}; const users=[];
     (SEARCH_POSTS||[]).forEach(p=>{ const nm=(p.author||''); if(nm&&nm.toLowerCase().includes(q)&&!seen[p.user_id]){seen[p.user_id]=1;users.push(p);} });
-    if(users.length) html+=`<div class="section-title">Utenti</div>`+users.slice(0,10).map(p=>`<div class="row"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('user',20)}</div><div class="rt" style="flex:1"><b>@${p.author}</b></div>${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>`).join('');
+    if(users.length) html+=`<div class="section-title">Utenti</div>`+users.slice(0,10).map(p=>`<div class="row"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('user',20)}</div><div class="rt" style="flex:1"><b>@${p.author}</b></div>${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="btn sm sec" style="width:auto;padding:7px 10px;font-size:12px;margin-right:6px" onclick="openChatWith('${p.user_id}','${(p.author||'utente').replace(/'/g,'')}')">💬</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>`).join('');
   }
   // Video / Allenamenti
   if(f==='Tutti'||f==='Video'){
@@ -3660,7 +3661,7 @@ function realShortCard(p){
       ${(cloudUser&&p.user_id===cloudUser.id)?`<button onclick="deletePost('${p.id}')"><span>🗑</span><span class="cnt">Elimina</span></button>`:''}
     </div>
     <div class="info">
-      <div class="uname">@${(p.author||'utente')} ${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="foll-btn ${isFollowingId(p.user_id)?'ing':''}" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>
+      <div class="uname">@${(p.author||'utente')} ${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="foll-btn" onclick="openChatWith('${p.user_id}','${(p.author||'utente').replace(/'/g,'')}')">💬 Messaggia</button> <button class="foll-btn ${isFollowingId(p.user_id)?'ing':''}" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>
       <div class="cap">${capWithTags(p.caption||'')}</div>
       <div class="chips">${[p.diet,p.goal].filter(Boolean).map(t=>`<span class="chip w">#${t}</span>`).join('')}</div>
     </div>
