@@ -444,11 +444,11 @@ const S = {
   planChoices:{},
   cart:[],
   reminders:[
-    {t:"Integratore Omega-3", d:"08:30 · con colazione", on:true, ic:"💊", c:"var(--green)"},
-    {t:"Bere acqua", d:"ogni 2 ore", on:true, ic:"💧", c:"var(--blue)"},
-    {t:"Visita dermatologica estetica", d:"Gio 24 lug · 15:30", on:true, ic:"✨", c:"var(--coral)"},
+    {t:"Integratore Omega-3", d:"08:30 · con colazione", on:false, ic:"💊", c:"var(--green)"},
+    {t:"Bere acqua", d:"ogni 2 ore", on:false, ic:"💧", c:"var(--blue)"},
+    {t:"Visita dermatologica estetica", d:"Gio 24 lug · 15:30", on:false, ic:"✨", c:"var(--coral)"},
     {t:"Assumere Ferro", d:"fase mestruale · 13:00", on:false, ic:"🩸", c:"var(--coral)"},
-    {t:"Allenamento gambe", d:"18:00", on:true, ic:"🏋️", c:"var(--violet)"}
+    {t:"Allenamento gambe", d:"18:00", on:false, ic:"🏋️", c:"var(--violet)"}
   ],
   appointments:[
     {who:"Dr.ssa Bianchi", spec:"Nutrizionista", when:"Mar 22 lug · 10:00", ic:"🥗", mode:"Video"},
@@ -570,7 +570,7 @@ let SB=null, cloudUser=null;
 function cloudCfg(){ try{ const c=JSON.parse(localStorage.getItem('aurea_cloud')||'null'); if(c&&c.url&&c.key)return c; }catch(e){} return (DEFAULT_CLOUD.url&&DEFAULT_CLOUD.key)?DEFAULT_CLOUD:null; }
 function cloudInit(){
   const c=cloudCfg();
-  if(c&&c.url&&c.key&&window.supabase){ try{ SB=window.supabase.createClient(c.url,c.key); return true; }catch(e){ SB=null; } }
+  if(c&&c.url&&c.key&&window.supabase){ try{ SB=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'aurea_auth'}}); return true; }catch(e){ SB=null; } }
   return false;
 }
 function cloudOn(){ return !!SB; }
@@ -760,10 +760,13 @@ function logWorkoutDone(name,baseK,minutes){
   let kcal;
   if(baseK){ kcal=Math.round(baseK*w/65); }
   else { kcal=Math.round(5*w*((minutes||30)/60)); } // MET ~5 se sconosciuto
-  S.workoutKcal=(S.workoutKcal||0)+kcal; save(); rebuild('home'); rebuild('allenamento');
+  S.workoutKcal=(S.workoutKcal||0)+kcal;
+  S.workoutLog=S.workoutLog||[]; S.workoutLog.unshift({name,kcal});
+  save(); rebuild('home'); rebuild('allenamento');
   toast('💪 '+name+': ~'+kcal+' kcal bruciate (sul tuo peso)');
 }
-function resetBurned(){ S.workoutKcal=0; save(); rebuild('home'); toast('Calorie allenamento azzerate'); }
+function rmWorkoutDone(i){ const l=S.workoutLog||[]; const it=l[i]; if(!it)return; S.workoutKcal=Math.max(0,(S.workoutKcal||0)-(it.kcal||0)); l.splice(i,1); save(); rebuild('home'); rebuild('allenamento'); toast('Allenamento rimosso · calorie ricalcolate'); }
+function resetBurned(){ S.workoutKcal=0; S.workoutLog=[]; save(); rebuild('home'); rebuild('allenamento'); toast('Calorie allenamento azzerate'); }
 function workoutDoneMinutes(name){ const m=parseInt(prompt('Quanti minuti è durato "'+name+'"?','30')); if(isNaN(m)||m<=0){toast('Durata non valida');return;} logWorkoutDone(name,0,m); }
 
 /* ============ AI VISION reale (Claude) ============ */
@@ -988,10 +991,27 @@ function diarioHTML(){
   </div>`;
 }
 function setWater(n){S.water=(S.water===n?n-1:n);rebuild('diario');rebuild('home');toast('Idratazione aggiornata');}
-function setWaterHome(){ const v=prompt('Quanti bicchieri d\'acqua hai bevuto oggi? (obiettivo '+S.waterGoal+')', S.water||0); if(v===null)return; const n=parseInt(v); if(isNaN(n)||n<0||n>30){toast('Valore non valido');return;} S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); }
-function setStepsManual(){ const v=prompt('Quanti passi hai fatto oggi?', S.steps||0); if(v===null)return; const n=parseInt((''+v).replace(/\./g,'')); if(isNaN(n)||n<0||n>100000){toast('Valore non valido');return;} S.steps=n; save(); rebuild('home'); toast('Passi: '+n); }
+/* ---- Cursore (slider) riutilizzabile ---- */
+function openSlider(o){
+  const box=document.createElement('div'); box.id='slider-panel'; box.style.cssText='position:absolute;inset:0;z-index:70;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
+  const fmt=v=>o.fmt?o.fmt(v):v+(o.unit||'');
+  box.innerHTML=`<div style="background:#fff;width:100%;border-radius:22px 22px 0 0;padding:18px 18px calc(20px + env(safe-area-inset-bottom,0))">
+    <div class="grab"></div>
+    <h3 style="margin:0 0 4px;text-align:center;font-size:16px">${o.title}</h3>
+    <div style="text-align:center;font-size:34px;font-weight:800;color:var(--green-d);margin:8px 0" id="sl-val">${fmt(o.value)}</div>
+    <input type="range" min="${o.min}" max="${o.max}" step="${o.step||1}" value="${o.value}" style="width:100%" oninput="document.getElementById('sl-val').textContent=(${o.fmt?o.fmt.toString():'null'}||(v=>v+'${o.unit||''}'))(+this.value)">
+    <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:4px"><span>${fmt(o.min)}</span><span>${fmt(o.max)}</span></div>
+    <button class="btn" style="margin-top:16px" onclick="(${o.onSet.toString()})(+document.querySelector('#slider-panel input').value);closeSlider()">Conferma</button>
+    <button class="btn sec sm" style="margin-top:8px" onclick="closeSlider()">Annulla</button>
+  </div>`;
+  box.onclick=(ev)=>{ if(ev.target===box)closeSlider(); };
+  (document.querySelector('.screen.active')||document.body).appendChild(box);
+}
+function closeSlider(){ const b=document.getElementById('slider-panel'); if(b)b.remove(); }
+function setWaterHome(){ openSlider({title:"Bicchieri d'acqua oggi",min:0,max:20,step:1,value:S.water||0,unit:' bicchieri',onSet:function(n){ S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); }}); }
+function setStepsManual(){ openSlider({title:'Passi di oggi',min:0,max:20000,step:500,value:S.steps||0,fmt:function(v){return v.toLocaleString('it-IT')+' passi';},onSet:function(n){ S.steps=n; save(); rebuild('home'); toast('Passi: '+n.toLocaleString('it-IT')); }}); }
 function sleepNeeded(){ const a=S.user.age||30; if(a<18) return {min:8,ideal:9}; if(a>64) return {min:7,ideal:8}; return {min:7,ideal:8}; }
-function setSleep(){ const v=prompt('Quante ore hai dormito stanotte? (es. 6.5)', S.sleep||''); if(v===null)return; const h=parseFloat((''+v).replace(',','.')); if(isNaN(h)||h<0||h>16){toast('Valore non valido');return;} S.sleep=+h.toFixed(1); save(); rebuild('home'); const need=sleepNeeded(); toast(h<need.min?('Sonno: '+S.sleep+'h · sotto il consigliato, guarda i consigli'):('Sonno aggiornato: '+S.sleep+'h')); }
+function setSleep(){ openSlider({title:'Ore di sonno stanotte',min:0,max:14,step:0.5,value:S.sleep||7,fmt:function(v){return v+'h';},onSet:function(h){ S.sleep=+(+h).toFixed(1); save(); rebuild('home'); const need=sleepNeeded(); toast(h<need.min?('Sonno: '+S.sleep+'h · sotto il consigliato, guarda i consigli'):('Sonno aggiornato: '+S.sleep+'h')); }}); }
 function sleepHabits(){ return ["📵 Niente schermi 1h prima","🕒 Orari regolari","☕ Stop caffeina dopo le 16","🌡️ Camera fresca e buia","🍵 Tisana rilassante","🧘 Respirazione prima di dormire"]; }
 function sleepAdvice(){
   const need=sleepNeeded(); const h=S.sleep||0;
@@ -1040,7 +1060,30 @@ const INGREDIENTS=[
  {n:"Noci",e:"🌰",k:654,p:15},{n:"Arachidi",e:"🥜",k:567,p:26},{n:"Burro d'arachidi",e:"🥜",k:588,p:25},
  {n:"Olio d'oliva",e:"🫒",k:884,p:0},{n:"Burro",e:"🧈",k:717,p:1},{n:"Miele",e:"🍯",k:304,p:0},
  {n:"Cioccolato fondente",e:"🍫",k:546,p:8},{n:"Zucchero",e:"🧂",k:387,p:0},{n:"Marmellata",e:"🍓",k:250,p:0},
- {n:"Pizza margherita",e:"🍕",k:266,p:11},{n:"Gnocchi",e:"🥟",k:157,p:4},{n:"Hummus",e:"🥣",k:166,p:8}
+ {n:"Pizza margherita",e:"🍕",k:266,p:11},{n:"Gnocchi",e:"🥟",k:157,p:4},{n:"Hummus",e:"🥣",k:166,p:8},
+ // --- Colazione & dolci ---
+ {n:"Cornetto/brioche",e:"🥐",k:414,p:8},{n:"Cornetto alla crema",e:"🥐",k:430,p:7},{n:"Biscotti frollini",e:"🍪",k:460,p:7},
+ {n:"Biscotti integrali",e:"🍪",k:430,p:8},{n:"Cereali da colazione",e:"🥣",k:379,p:8},{n:"Muesli",e:"🥣",k:363,p:10},
+ {n:"Pancake",e:"🥞",k:227,p:6},{n:"Crepe/crêpe",e:"🥞",k:210,p:6},{n:"Ciambella/donut",e:"🍩",k:452,p:6},
+ {n:"Crostata alla marmellata",e:"🥧",k:340,p:5},{n:"Torta margherita",e:"🍰",k:360,p:6},{n:"Plumcake",e:"🍰",k:390,p:6},
+ {n:"Crema al cioccolato (Nutella)",e:"🍫",k:539,p:6},{n:"Cioccolato al latte",e:"🍫",k:535,p:7},{n:"Croissant vuoto",e:"🥐",k:406,p:8},
+ {n:"Pane e Nutella",e:"🍞",k:400,p:7},{n:"Yogurt alla frutta",e:"🥛",k:85,p:4},{n:"Succo di frutta",e:"🧃",k:46,p:0},
+ {n:"Cappuccino",e:"☕",k:55,p:3},{n:"Caffè zuccherato",e:"☕",k:20,p:0},{n:"Spremuta d'arancia",e:"🍊",k:45,p:1},
+ // --- Merenda & snack ---
+ {n:"Barretta ai cereali",e:"🍫",k:400,p:6},{n:"Barretta proteica",e:"🍫",k:350,p:30},{n:"Patatine in busta",e:"🍟",k:536,p:6},
+ {n:"Cracker",e:"🍘",k:428,p:9},{n:"Taralli",e:"🥨",k:490,p:10},{n:"Grissini",e:"🥖",k:433,p:12},
+ {n:"Pop corn",e:"🍿",k:387,p:12},{n:"Frutta secca mista",e:"🥜",k:600,p:18},{n:"Gelato",e:"🍦",k:207,p:4},
+ {n:"Ghiacciolo",e:"🧊",k:90,p:0},{n:"Budino",e:"🍮",k:130,p:3},{n:"Crackers riso",e:"🍘",k:387,p:8},
+ {n:"Frutta disidratata",e:"🍇",k:300,p:3},{n:"Wafer",e:"🍫",k:515,p:6},{n:"Merendina al cioccolato",e:"🍫",k:420,p:6},
+ // --- Piatti di pasta & primi ---
+ {n:"Pasta al pomodoro (pronta)",e:"🍝",k:140,p:5},{n:"Pasta al ragù (pronta)",e:"🍝",k:180,p:8},{n:"Pasta al pesto (pronta)",e:"🍝",k:210,p:7},
+ {n:"Pasta in bianco (pronta)",e:"🍝",k:160,p:5},{n:"Lasagne",e:"🍝",k:170,p:8},{n:"Risotto (pronto)",e:"🍚",k:160,p:4},
+ {n:"Spaghetti carbonara (pronti)",e:"🍝",k:240,p:10},{n:"Pasta al forno",e:"🍝",k:200,p:9},{n:"Tortellini (pronti)",e:"🥟",k:250,p:11},
+ {n:"Ravioli (pronti)",e:"🥟",k:230,p:9},{n:"Minestrone",e:"🥣",k:40,p:2},{n:"Zuppa di legumi",e:"🥣",k:90,p:5},
+ // --- Secondi & altro ---
+ {n:"Cotoletta impanata",e:"🍗",k:290,p:20},{n:"Polpette",e:"🍖",k:230,p:16},{n:"Hamburger (solo carne)",e:"🍔",k:250,p:18},
+ {n:"Frittata",e:"🍳",k:154,p:11},{n:"Wurstel",e:"🌭",k:270,p:12},{n:"Bresaola e grana",e:"🥩",k:200,p:28},
+ {n:"Insalata di pollo",e:"🥗",k:120,p:15},{n:"Sushi (media)",e:"🍣",k:145,p:6},{n:"Piadina",e:"🌯",k:300,p:8}
 ];
 function addFood(meal){ S._addMeal=meal||'Pasto'; _fq=''; go('addfood'); }
 let _fq='';
@@ -1232,7 +1275,14 @@ const FOODS={
   ]
 };
 const CATS=[["colazione","Colazione","🥐"],["pranzo","Pranzo","🍲"],["spuntino","Spuntino","🍎"],["cena","Cena","🐟"]];
+function fastActive(){ return !!(S.fasting && S.fasting.proto && S.fasting.proto!=='5:2'); }
 function mealSet(){
+  if(fastActive()){
+    const p=S.fasting.proto, win=(S.fasting.start||'12:00')+'–'+(S.fasting.end||'20:00');
+    if(p==='16:8') return [["pranzo","Apertura finestra "+(S.fasting.start||'12:00'),"🍲"],["spuntino","Spuntino","🍎"],["cena","Chiusura "+(S.fasting.end||'20:00'),"🐟"]];
+    if(p==='14:10') return [["pranzo","Apertura "+(S.fasting.start||'12:00'),"🍲"],["spuntino","Spuntino","🍎"],["cena","Chiusura "+(S.fasting.end||'20:00'),"🐟"]];
+    return [["colazione","Apertura "+(S.fasting.start||'12:00'),"🥐"],["pranzo","Pranzo","🍲"],["cena","Chiusura "+(S.fasting.end||'20:00'),"🐟"]];
+  }
   const n=S.mealsCount||4;
   if(n<=3) return [["colazione","Colazione","🥐"],["pranzo","Pranzo","🍲"],["cena","Cena","🐟"]];
   if(n===4) return [["colazione","Colazione","🥐"],["pranzo","Pranzo","🍲"],["spuntino","Spuntino","🍎"],["cena","Cena","🐟"]];
@@ -1240,6 +1290,12 @@ function mealSet(){
 }
 function foodKey(cat){return cat==='spuntino2'?'spuntino':cat;}
 function mealPct(){
+  if(fastActive()){
+    const p=S.fasting.proto;
+    if(p==='16:8') return {pranzo:.45,spuntino:.15,cena:.40};
+    if(p==='14:10') return {pranzo:.40,spuntino:.15,cena:.45};
+    return {colazione:.30,pranzo:.40,cena:.30};
+  }
   const n=S.mealsCount||4;
   if(n<=3) return {colazione:.30,pranzo:.40,cena:.30};
   if(n===4) return {colazione:.25,pranzo:.35,spuntino:.15,cena:.25};
@@ -1374,7 +1430,7 @@ function planHTML(){
   return `
   <div class="topbar"><div class="hello"><div class="k">Obiettivo: ${S.user.goal}</div><div class="n">Piano nutrizionale</div></div><div class="avatar" onclick="go('profilo')">${S.user.initials}</div></div>
 
-  <div class="banner gg"><span class="b-ic">🥗</span><h4>${wp.kcal.toLocaleString('it-IT')} kcal · 5 pasti</h4><p>Piano calcolato per portarti da ${S.wStart} a ${S.wGoal} kg (~${wp.weeklyKg} kg/sett). Scegli tra più opzioni per ogni pasto e adattalo ai tuoi gusti.</p></div>
+  <div class="banner gg"><span class="b-ic">🥗</span><h4>${wp.kcal.toLocaleString('it-IT')} kcal · ${mealSet().length} pasti${fastActive()?' · digiuno '+S.fasting.proto:''}</h4><p>${fastActive()?`Piano adattato al digiuno ${S.fasting.proto}: pasti nella finestra ${S.fasting.start}–${S.fasting.end}.`:`Piano calcolato per portarti da ${S.wStart} a ${S.wGoal} kg (~${wp.weeklyKg} kg/sett). Scegli tra più opzioni per ogni pasto e adattalo ai tuoi gusti.`}</p></div>
 
   <div class="card">
     <div class="h">🎯 Piano legato al peso obiettivo</div>
@@ -1432,7 +1488,7 @@ function planHTML(){
     </div>
     ${S.kcalCustom?`<div class="sub" style="text-align:center"><a onclick="resetKcal()" style="color:var(--green-d);font-weight:700;cursor:pointer">↺ Torna al consigliato (${wp.baseKcal})</a></div>`:''}
     <div class="sub" style="margin:12px 0 6px">Quanti pasti al giorno?</div>
-    <div class="seg" id="meals-seg">${[3,4,5].map(n=>`<button class="${(S.mealsCount||4)===n?'on':''}" onclick="setMeals(${n})">${n} pasti</button>`).join('')}</div>
+    ${fastActive()?`<div class="alert info" style="margin:0"><span>⏳</span><div>Con il <b>digiuno ${S.fasting.proto}</b> attivo, i pasti sono concentrati nella finestra <b>${S.fasting.start}–${S.fasting.end}</b>: l'app organizza i pasti dentro la finestra. <a onclick="go('digiuno')" style="color:var(--green-d);font-weight:700;cursor:pointer">Modifica finestra →</a></div></div>`:`<div class="seg" id="meals-seg">${[3,4,5].map(n=>`<button class="${(S.mealsCount||4)===n?'on':''}" onclick="setMeals(${n})">${n} pasti</button>`).join('')}</div>`}
   </div>
 
   <div class="card"><div class="h">🎯 Ripartizione calorie</div><div class="sub">Obiettivo <b>${S.user.goal}</b>: ${goalNote()}. Le opzioni sono già porzionate per <b>sommare a ${wp.kcal} kcal</b> al giorno sui tuoi ${S.mealsCount||4} pasti — scegline una per pasto e il totale resta nel limite.</div></div>
@@ -1473,6 +1529,7 @@ function cyc(){ if(!S.cycle) S.cycle={start:1,cycleLen:28,periodLen:5}; return S
 // il ciclo si vede solo se: utente NON uomo E monitoraggio attivo
 function cycleOn(){ return S.user.sex!=='M' && S.cycleTracking!==false; }
 function toggleCycleTracking(el){ S.cycleTracking=!(S.cycleTracking!==false); if(el)el.classList.toggle('on',S.cycleTracking); save(); renderMenu(); rebuild('home'); if(!S.cycleTracking && curScreen==='ciclo')go('home'); toast(S.cycleTracking?'Monitoraggio ciclo attivo':'Monitoraggio ciclo disattivato'); }
+function toggleNotif(el){ S.notif=!(S.notif!==false); if(el)el.classList.toggle('on',S.notif); save(); toast(S.notif?'Notifiche attive':'Notifiche disattivate'); }
 function cycleClass(d){
   const c=cyc(), s=c.start;
   if((c.logged||[]).includes(d)) return 'period'; // giorni registrati dall'utente
@@ -1662,9 +1719,16 @@ function docAvail(name){
   return defaultAvail(name);
 }
 function slotTaken(name,date,time){ return (S.booked||[]).includes(name+'|'+date+'|'+time); }
-function openBooking(name,spec,ic){
-  S._bk={name,spec,ic,date:null}; drawBooking();
+function docModes(name){
+  const d=allDocs().find(x=>x.n===name); const tags=(d&&d.tags)||["Video","In studio"]; const modes=[];
+  if(tags.some(t=>/video|online/i.test(t)))modes.push('Online');
+  if(tags.some(t=>/studio|palestra|presenza/i.test(t)))modes.push('In studio');
+  return modes.length?modes:['Online','In studio'];
 }
+function openBooking(name,spec,ic){
+  const modes=docModes(name); S._bk={name,spec,ic,date:null,mode:modes[0],modes}; drawBooking();
+}
+function setBookMode(m){ S._bk.mode=m; drawBooking(); }
 function drawBooking(){
   const bk=S._bk; if(!bk)return;
   let avail=docAvail(bk.name).map(d=>({...d,times:d.times.filter(t=>!slotTaken(bk.name,d.date,t))})).filter(d=>d.times.length);
@@ -1681,10 +1745,14 @@ function drawBooking(){
     <div class="sub" style="margin-bottom:10px">📅 <b>${day.label}</b> — scegli l'orario:</div>
     <div class="grid2" style="gap:8px">${day.times.map(t=>`<button class="btn sec sm" style="padding:12px" onclick="confirmBooking('${day.date}','${day.label.replace(/'/g,'')}','${t}')">🕐 ${t}</button>`).join('')}</div>`;
   }
+  const modes=bk.modes||['Online','In studio'];
+  const modeSel=`<div class="sub" style="margin-bottom:6px">Tipo di visita:</div>
+    <div class="seg" style="margin-bottom:14px">${modes.map(m=>`<button class="${bk.mode===m?'on':''}" onclick="setBookMode('${m}')">${m==='Online'?'💻 Online':'🏥 In studio'}</button>`).join('')}</div>`;
   box.innerHTML=`<div style="background:#fff;width:100%;border-radius:22px 22px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:82%;overflow-y:auto">
     <div class="grab"></div>
     <h3 style="margin:0 0 4px;text-align:center;font-size:16px">${bk.ic} Prenota con ${bk.name}</h3>
     <div class="sub" style="text-align:center;margin-bottom:14px">${bk.spec}</div>
+    ${modeSel}
     ${body}
     <button class="btn" style="margin-top:12px" onclick="closeBooking()">Chiudi</button>
   </div>`;
@@ -1696,11 +1764,12 @@ function pickBookDate(date){ S._bk.date=date; drawBooking(); }
 function closeBooking(){ const b=document.getElementById('book-panel'); if(b)b.remove(); S._bk=null; }
 function confirmBooking(date,label,time){
   const bk=S._bk; if(!bk)return;
+  const mode=bk.mode||'Online';
   S.booked=S.booked||[]; S.booked.push(bk.name+'|'+date+'|'+time);
-  S.appointments.unshift({who:bk.name,spec:bk.spec,ic:bk.ic,date,label,time,when:label+' · '+time,mode:'Confermato',slot:bk.name+'|'+date+'|'+time});
-  S.reminders.unshift({t:'Appuntamento '+bk.spec,d:bk.name+' · '+label+' '+time+' · promemoria 1h prima',on:true,ic:bk.ic,c:'var(--coral)'});
+  S.appointments.unshift({who:bk.name,spec:bk.spec,ic:bk.ic,date,label,time,when:label+' · '+time,mode:mode,slot:bk.name+'|'+date+'|'+time});
+  S.reminders.unshift({t:'Appuntamento '+bk.spec,d:bk.name+' · '+label+' '+time+' · '+mode+' · promemoria 1h prima',on:true,ic:bk.ic,c:'var(--coral)'});
   closeBooking(); save(); renderMyAppts(); renderHomeAppts(); rebuild('home'); rebuild('promemoria');
-  toast('Prenotato: '+bk.name+' · '+label+' '+time);
+  toast('Prenotato: '+bk.name+' · '+label+' '+time+' ('+mode+')');
 }
 function freeSlot(a){ if(a&&a.slot){ S.booked=(S.booked||[]).filter(x=>x!==a.slot); } }
 function cancelAppt(i){ const a=S.appointments[i]; if(!a)return; if(!confirm('Annullare l\'appuntamento con '+a.who+'?'))return;
@@ -1734,6 +1803,7 @@ function renderDocs(filter){
         ${d.me?`<button class="btn sm sec" style="width:auto;padding:9px 12px" onclick="go('pro')">Gestisci</button>`:`<button class="btn sm" style="width:auto;padding:9px 12px" onclick="openBooking('${d.n.replace(/'/g,'')}','${d.s.replace(/'/g,'')}','${d.ic}')">Prenota</button>
         <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="rateDoctor('${d.n.replace(/'/g,'')}')">⭐ Valuta</button>`}
       </div>
+      ${(()=>{const recos=docRecos(d).map(n=>allProducts().find(p=>p.n===n)).filter(Boolean); return recos.length?`<div style="width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"><div class="sub" style="font-size:11px;margin-bottom:6px">🛍️ Prodotti consigliati da ${d.n.split(' ')[0]}:</div><div style="display:flex;gap:8px;overflow-x:auto">${recos.map(p=>`<div style="flex:0 0 auto;background:var(--mint);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:6px"><span>${p.ic||'💊'}</span><div style="font-size:11px"><b>${p.n}</b><br>€${(+p.p).toFixed(2)}</div><button class="add" style="width:26px;height:26px;font-size:16px" onclick="addCartByName('${p.n.replace(/'/g,"\\'")}')">＋</button></div>`).join('')}</div></div>`:'';})()}
     </div>`).join('');
 }
 function rateDoctor(name){
@@ -1923,7 +1993,8 @@ function allenamentoHTML(){
   ${custom.length?`<div class="section-title" style="margin-top:0">Allenamenti dei creator 🎬</div>
   ${custom.map((w,i)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,'')}')">✓ Fatto</button></div></div>`).join('')}`:''}
 
-  <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0">🔥</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div></div>
+  <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0">🔥</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div>
+  ${(S.workoutLog&&S.workoutLog.length)?`<div class="sub" style="margin:8px 0 4px">Fatti oggi (tocca 🗑 se hai sbagliato):</div>${S.workoutLog.map((it,i)=>`<div class="row" style="padding:6px 0"><div class="rt"><b>✓ ${it.name}</b><small>~${it.kcal} kcal</small></div><button onclick="rmWorkoutDone(${i})" style="background:none;border:none;color:var(--coral);font-size:16px;cursor:pointer">🗑</button></div>`).join('')}`:''}</div>
 
   <div class="section-title" style="margin-top:0">Libreria per il tuo obiettivo</div>
   ${prog.list.map(w=>`
@@ -1976,11 +2047,15 @@ function renderReminders(){
     <div class="tog">
       <div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">${r.ic}</div>
       <div class="tt"><b>${r.t}</b><small>${r.d}</small></div>
+      <button onclick="rmReminder(${i})" style="background:none;border:none;color:var(--coral);font-size:16px;cursor:pointer;margin-right:2px">🗑</button>
       <div class="switch ${r.on?'on':''}" onclick="toggleRem(${i},this)"><i></i></div>
-    </div>`).join('');
+    </div>`).join('') || '<div class="sub">Nessun promemoria. Tocca "Nuovo promemoria" per crearne uno.</div>';
 }
-function toggleRem(i,el){S.reminders[i].on=!S.reminders[i].on;el.classList.toggle('on');toast(S.reminders[i].on?'Promemoria attivo':'Promemoria disattivato');}
-function addReminder(){S.reminders.push({t:"Nuovo promemoria",d:"Oggi · 20:00",on:true,ic:"⭐",c:"var(--green)"});rebuild('promemoria');go('promemoria');toast('Promemoria aggiunto');}
+function toggleRem(i,el){S.reminders[i].on=!S.reminders[i].on;el.classList.toggle('on');save();toast(S.reminders[i].on?'Promemoria attivo':'Promemoria disattivato');}
+function rmReminder(i){ if(!confirm('Eliminare questo promemoria?'))return; S.reminders.splice(i,1); save(); renderReminders(); toast('Promemoria eliminato'); }
+function addReminder(){ const t=prompt('Cosa vuoi ricordarti?'); if(!t||!t.trim())return;
+  const when=prompt('Quando? (es. "Oggi · 20:00" oppure "ogni 2 ore")','Oggi · 20:00')||'';
+  S.reminders.push({t:t.trim(),d:when.trim()||'—',on:true,ic:'⭐',c:'var(--green)'}); save(); renderReminders(); toast('Promemoria creato (attivo)'); }
 
 /* ---------- PROFILO ---------- */
 function profiloHTML(){
@@ -2006,8 +2081,7 @@ function profiloHTML(){
 
   <div class="card tight">
     ${S.user.sex!=='M'?`<div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--coral-s)">🌸</div><div class="tt"><b>Monitoraggio ciclo</b><small>Salute femminile & ormonale</small></div><div class="switch ${S.cycleTracking!==false?'on':''}" onclick="toggleCycleTracking(this)"><i></i></div></div>`:''}
-    <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:#e8f1ff">⌚</div><div class="tt"><b>Sincronizza wearable</b><small>Apple Health · Google Fit</small></div><div class="switch on" onclick="this.classList.toggle('on')"><i></i></div></div>
-    <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">🔔</div><div class="tt"><b>Notifiche</b><small>Promemoria & consigli</small></div><div class="switch on" onclick="this.classList.toggle('on')"><i></i></div></div>
+    <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">🔔</div><div class="tt"><b>Notifiche</b><small>Promemoria & consigli</small></div><div class="switch ${S.notif!==false?'on':''}" onclick="toggleNotif(this)"><i></i></div></div>
   </div>
 
   <div class="card tight">
@@ -2017,7 +2091,6 @@ function profiloHTML(){
     <div class="row" onclick="go('prenota')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">🩺</div><div class="rt"><b>Le mie visite</b></div><div class="rv">›</div></div>
     <div class="row" onclick="openCart()" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📦</div><div class="rt"><b>I miei ordini</b></div><div class="rv">›</div></div>
     <div class="row" onclick="go('promemoria')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">⏰</div><div class="rt"><b>Promemoria</b></div><div class="rv">›</div></div>
-    <div class="row" onclick="toast('Report PDF generato')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📄</div><div class="rt"><b>Esporta report salute</b></div><div class="rv">›</div></div>
   </div>
 
   <div class="card">
@@ -2668,13 +2741,21 @@ function myShortCard(s){
   </div>`;
 }
 function deleteMyShort(id){ if(!confirm('Eliminare questo video?'))return; MYSHORTS=MYSHORTS.filter(x=>x.id!==id); renderComBody('perte'); toast('Video eliminato'); }
-async function cloudDeletePost(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('posts').delete().eq('id',id); }catch(e){ return {error:e}; } }
-async function deletePost(id){ if(!confirm('Eliminare questo video?'))return;
+async function cloudDeletePost(id){ if(!cloudOn())return {error:new Error('offline')};
+  try{
+    // recupera l'url per cancellare anche il file dallo storage
+    let videoUrl=null; try{ const {data}=await SB.from('posts').select('video_url').eq('id',id).maybeSingle(); videoUrl=data&&data.video_url; }catch(e){}
+    const res=await SB.from('posts').delete().eq('id',id);
+    if(res.error)return res;
+    if(videoUrl){ const m=videoUrl.split('/videos/'); if(m[1]){ try{ await SB.storage.from('videos').remove([decodeURIComponent(m[1])]); }catch(e){} } }
+    return res;
+  }catch(e){ return {error:e}; } }
+async function deletePost(id){ if(!confirm('Eliminare definitivamente questo video?'))return;
   const res=await cloudDeletePost(id)||{};
   if(res.error){ toast('Non eliminato: '+(res.error.message||res.error)); return; }
   // rimuovo subito la card e ricarico il feed dal cloud
   const card=document.querySelector('.short[data-pid="'+id+'"]'); if(card)card.remove();
-  renderComBody('perte'); toast('Video eliminato'); }
+  renderComBody('perte'); toast('Video eliminato definitivamente'); }
 function wireFeedMedia(container){ if(!container)return; container.querySelectorAll('.short').forEach(card=>{ const v=card.querySelector('video'); const auds=[...card.querySelectorAll('audio')]; const preset=card.getAttribute('data-preset');
   if(v){
     v.addEventListener('play',()=>{ auds.forEach(a=>{try{a.currentTime=v.currentTime||0;a.play().catch(()=>{});}catch(e){}}); if(preset){ try{card._pctx&&card._pctx.close&&card._pctx.close();}catch(e){} card._pctx=playPreset(preset,'preview'); } });
@@ -2985,12 +3066,14 @@ function digiunoHTML(){
     <div class="sub" style="margin-top:10px" id="fast-desc">${fastDesc((f&&f.proto)||'14:10')}</div>
   </div>
 
-  <div class="card" id="fast-window" style="${(f&&f.proto)==='5:2'?'display:none':''}">
+  <div class="card" id="fast-window" style="${((f&&f.proto)||S._fastProto||'14:10')==='5:2'?'display:none':''}">
     <div class="h">🕒 La tua finestra per mangiare</div>
+    <div class="sub" style="margin-bottom:10px">L'app propone una finestra con le ore di digiuno giuste per il protocollo scelto. Se sposti l'<b>inizio</b>, l'app ricalcola da sola la <b>fine</b> mantenendo le stesse ore di digiuno.</div>
     <div class="grid2">
-      <div class="field"><label>Inizio</label><input id="fast-start" type="time" value="${(f&&f.start)||'12:00'}"></div>
-      <div class="field"><label>Fine</label><input id="fast-end" type="time" value="${(f&&f.end)||'20:00'}"></div>
+      <div class="field"><label>Inizio pasti</label><input id="fast-start" type="time" value="${(f&&f.start)||'12:00'}" onchange="updateFastEnd()" oninput="updateFastEnd()"></div>
+      <div class="field"><label>Fine pasti (auto)</label><input id="fast-end" type="time" value="${(f&&f.end)||'20:00'}" readonly style="background:var(--line-s,#f2f2f2)"></div>
     </div>
+    <div class="sub" id="fast-hint" style="margin-bottom:10px"></div>
     <button class="btn sm" onclick="saveFasting()">${f?'Aggiorna finestra':'Attiva digiuno'}</button>
   </div>
 
@@ -3007,8 +3090,22 @@ function digiunoHTML(){
   <div class="tiny">Parti soft (12:12 o 14:10) per 2-3 settimane, bevi molta acqua e non trascurare la qualità dei pasti.</div>
   `;
 }
-function setFastProto(p,btn){document.querySelectorAll('#fast-proto button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');const d=document.getElementById('fast-desc');if(d)d.textContent=fastDesc(p);const w=document.getElementById('fast-window');if(w)w.style.display=p==='5:2'?'none':'block';S._fastProto=p;}
-function saveFasting(){const p=S._fastProto||(S.fasting&&S.fasting.proto)||'14:10';const stEl=document.getElementById('fast-start'),enEl=document.getElementById('fast-end');const st=stEl?stEl.value:'12:00',en=enEl?enEl.value:'20:00';S.fasting={proto:p,start:st,end:en};save();rebuild('digiuno');go('digiuno');toast('Digiuno '+p+' attivato');}
+function fastEatHours(p){ return ({'12:12':12,'14:10':10,'16:8':8})[p]||10; }
+function addHours(t,h){ const a=(t||'12:00').split(':').map(Number); let tot=(a[0]*60+a[1]+h*60)%1440; if(tot<0)tot+=1440; const hh=Math.floor(tot/60), mm=tot%60; return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); }
+function updateFastEnd(){ const p=S._fastProto||(S.fasting&&S.fasting.proto)||'14:10'; if(p==='5:2')return;
+  const st=(document.getElementById('fast-start')||{}).value||'12:00'; const eat=fastEatHours(p); const en=addHours(st,eat);
+  const enEl=document.getElementById('fast-end'); if(enEl)enEl.value=en;
+  const hint=document.getElementById('fast-hint'); if(hint)hint.innerHTML=`Finestra pasti di <b>${eat}h</b> (${st}–${en}) · digiuno di <b>${24-eat}h</b>.`;
+}
+function setFastProto(p,btn){document.querySelectorAll('#fast-proto button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');const d=document.getElementById('fast-desc');if(d)d.textContent=fastDesc(p);const w=document.getElementById('fast-window');if(w)w.style.display=p==='5:2'?'none':'block';S._fastProto=p;
+  // proponi una finestra con le ore di digiuno corrette per il protocollo
+  if(p!=='5:2'){ const stEl=document.getElementById('fast-start'); const st=(stEl&&stEl.value)||'12:00'; if(stEl)stEl.value=st; updateFastEnd(); }
+}
+function saveFasting(){const p=S._fastProto||(S.fasting&&S.fasting.proto)||'14:10';
+  if(p==='5:2'){ S.fasting={proto:p}; }
+  else { const stEl=document.getElementById('fast-start'); const st=stEl?stEl.value:'12:00'; const en=addHours(st,fastEatHours(p)); S.fasting={proto:p,start:st,end:en}; }
+  S.planChoices={}; // rigenera il piano adattato al digiuno
+  save();rebuild('digiuno');rebuild('piano');rebuild('home');go('digiuno');toast('Digiuno '+p+' attivato · piano adattato');}
 function fastStatus(){
   const el=document.getElementById('fast-status'); if(!el||!S.fasting) return;
   const f=S.fasting;
@@ -3027,7 +3124,7 @@ function fastStatus(){
     <div class="ring-wrap">
       <div class="ring" style="width:96px;height:96px;flex:0 0 96px">${ring(prog,eating?'var(--green)':'var(--violet)',96,11)}<div class="c-val"><b style="font-size:17px">${hh}h${String(mm).padStart(2,'0')}</b><small>${eating?'alla chiusura':'al pasto'}</small></div></div>
       <div style="flex:1"><div class="sub">Finestra <b>${f.start}–${f.end}</b> · ${f.proto}</div><div class="sub" style="margin-top:6px">${eating?'Approfitta per pasti completi e proteici.':'Bevi acqua, tisane o caffè amaro: manca poco! 💪'}</div>
-      <button class="btn sm sec" style="margin-top:10px" onclick="S.fasting=null;save();rebuild(\'digiuno\');go(\'digiuno\');toast(\'Digiuno disattivato\')">Disattiva</button></div>
+      <button class="btn sm sec" style="margin-top:10px" onclick="S.fasting=null;S.planChoices={};save();rebuild(\'digiuno\');rebuild(\'piano\');rebuild(\'home\');go(\'digiuno\');toast(\'Digiuno disattivato · piano ripristinato\')">Disattiva</button></div>
     </div>`;
 }
 
@@ -3222,6 +3319,14 @@ function verifyPro(){
   toast(S.pro.status==='verificato'?'Titoli verificati ✔️ Ora sei attivo!':'Servono documenti aggiuntivi');
 }
 const PRO_TIMES=['08:00','09:00','09:30','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','16:30','17:00','18:00','19:00'];
+function toggleProReco(name,btn){ if(!S.pro)return; S.pro.recommends=S.pro.recommends||[]; const i=S.pro.recommends.indexOf(name); if(i<0)S.pro.recommends.push(name); else S.pro.recommends.splice(i,1); if(btn)btn.classList.toggle('sel'); save(); toast(i<0?('Consigli: '+name):('Rimosso: '+name)); }
+// prodotti consigliati da un professionista (il mio profilo o default per specialità dei demo)
+const DOC_RECO_BY_SPEC={nutrizion:["Omega-3 Ultra","Proteine Whey","Fibre + Psillio"],diabet:["Omega-3 Ultra","Magnesio + B6","Fibre + Psillio"],dermatolog:["Collagene Beauty","Zinco","Vitamina C"],estetic:["Collagene Beauty","Vitamina C"],endocrin:["Vitamina D3+K2","Inositolo","Magnesio + B6"],ginecolog:["Ferro + Vit C","Inositolo","Omega-3 Ultra"],trainer:["Proteine Whey","Creatina","Magnesio + B6"],psicolog:["Ashwagandha","Magnesio + B6","Melatonina"]};
+function docRecos(d){
+  if(d.me) return (S.pro&&S.pro.recommends)||[];
+  const key=Object.keys(DOC_RECO_BY_SPEC).find(k=>(d.s||'').toLowerCase().includes(k));
+  return key?DOC_RECO_BY_SPEC[key]:[];
+}
 function renderProAvail(){
   const c=document.getElementById('pro-avail'); if(!c)return;
   const av=(S.pro&&S.pro.avail)||[];
@@ -3285,6 +3390,12 @@ function proStatusHTML(){
     <div class="sub" style="margin-bottom:10px">Aggiungi i giorni e gli orari in cui i pazienti possono prenotarti. Compaiono nel loro calendario in fase di prenotazione.</div>
     <div id="pro-avail"></div>
     <button class="btn sec sm" style="margin-top:10px" onclick="proAddDate()">＋ Aggiungi un giorno disponibile</button>
+  </div>
+
+  <div class="card">
+    <div class="h">🛍️ Prodotti che consiglio ai pazienti</div>
+    <div class="sub" style="margin-bottom:10px">Seleziona dagli integratori in vendita: i pazienti li vedranno consigliati sul tuo profilo e potranno aggiungerli al carrello.</div>
+    <div class="chips">${allProducts().map(p=>`<button class="chip ${(s.recommends||[]).includes(p.n)?'sel':''}" onclick="toggleProReco('${p.n.replace(/'/g,"\\'")}',this)">${p.ic||'💊'} ${p.n}</button>`).join('')}</div>
   </div>
 
   <div class="card">
@@ -3451,7 +3562,7 @@ function afterRender(id){
   if(id==='planning'){renderPlanBody('cal');}
   if(id==='community'){renderComBody('perte');}
   if(id==='storia'){renderIntol();}
-  if(id==='digiuno'){fastStatus();}
+  if(id==='digiuno'){fastStatus();updateFastEnd();}
   if(id==='pro'){renderProAvail();}
 }
 function boot(){
