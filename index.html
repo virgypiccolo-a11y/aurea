@@ -1990,8 +1990,19 @@ async function cloudLoadWorkouts(){ if(!cloudOn()){CLOUD_WORKOUTS=[];return [];}
   try{ const {data,error}=await SB.from('workouts').select('*').order('created_at',{ascending:false}); if(error)throw error;
     CLOUD_WORKOUTS=(data||[]).map(r=>({id:r.id,owner:r.owner_id,n:r.name,d:r.descr||'',video:r.video_url,by:r.author||''}));
     return CLOUD_WORKOUTS; }catch(e){ return CLOUD_WORKOUTS; } }
-async function cloudAddWorkout(o){ const row={owner_id:cloudUser.id,name:o.n,descr:o.d,video_url:o.video,author:o.by}; const {data,error}=await SB.from('workouts').insert(row).select().single(); if(error)throw error; return data; }
-async function cloudDeleteWorkout(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('workouts').delete().eq('id',id); }catch(e){ return {error:e}; } }
+async function cloudAddWorkout(o){ const row={owner_id:cloudUser.id,name:o.n,descr:o.d,video_url:o.video,author:o.by};
+  const {data,error}=await SB.from('workouts').insert(row).select().single();
+  if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "workouts" su Supabase: esegui lo script SQL degli allenamenti.'); throw error; }
+  return data; }
+async function cloudDeleteWorkout(id){ if(!cloudOn())return {error:new Error('offline')};
+  try{
+    // recupera l'url per cancellare anche il file video dallo storage
+    let url=null; try{ const {data}=await SB.from('workouts').select('video_url').eq('id',id).maybeSingle(); url=data&&data.video_url; }catch(e){}
+    const res=await SB.from('workouts').delete().eq('id',id);
+    if(res.error)return res;
+    if(url){ const m=url.split('/videos/'); if(m[1]){ try{ await SB.storage.from('videos').remove([decodeURIComponent(m[1])]); }catch(e){} } }
+    return res;
+  }catch(e){ return {error:e}; } }
 function allWorkouts(){ return cloudOn()?CLOUD_WORKOUTS.slice():(S.customWorkouts||[]); }
 /* ===== MODALITÀ PROFESSIONISTA ===== */
 // Una volta registrato come professionista resta tale finché non preme "Ritira profilo".
@@ -2289,52 +2300,47 @@ function allenamentoHTML(){
   <button class="back" onclick="go('home')">← Indietro</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Programma per: ${goal}</div><div class="n">Allenamento</div></div></div>
 
-  <div class="banner gg"><span class="b-ic">🏋️</span><h4>Consigliato oggi · ${first.n}</h4><p>${prog.focus}. ${first.d}.</p></div>
+  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('dumbbell',78)}</span><h4>Consigliato oggi · ${first.n}</h4><p>${prog.focus}. ${first.d}.</p></div>
 
-  ${canTrainer()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo allenamento (video)</button>`:(canSell()?`<div class="alert info" style="padding:10px 12px;margin-bottom:12px"><span>🏋️</span><div>Solo i <b>personal trainer verificati</b> possono pubblicare video di allenamento.</div></div>`:'')}
+  ${canTrainer()?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addWorkout()">＋ Carica un tuo video di allenamento</button>`:(canSell()?`<div class="alert info" style="padding:10px 12px;margin-bottom:12px"><span>${ic('dumbbell',18)}</span><div>Solo i <b>personal trainer verificati</b> possono pubblicare video di allenamento.</div></div>`:'')}
 
-  <div class="section-title" style="margin-top:0">Allenamenti dei trainer 🎬</div>
-  <div id="wk-list">${custom.length?custom.map((w)=>`<div class="pro"><div class="ph" style="background:var(--mint)">🎬</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,"\\'")}')">✓ Fatto</button>${(w.id&&meId&&w.owner===meId)?`<button class="btn sm" style="width:auto;padding:7px 12px;font-size:12px;background:var(--coral);box-shadow:none" onclick="deleteWorkout('${w.id}')">🗑 Elimina</button>`:''}</div></div>`).join(''):`<div class="card" style="text-align:center"><div style="font-size:36px">🎬</div><div class="sub">Ancora nessun video di allenamento. ${canTrainer()?'Carica il primo!':'I personal trainer verificati li pubblicheranno qui.'}</div></div>`}</div>
+  <div class="section-title" style="margin-top:0">Allenamenti dei trainer</div>
+  <div id="wk-list">${custom.length?custom.map((w)=>`<div class="pro"><div class="ph" style="background:var(--mint);color:var(--green-d)">${ic('dumbbell',22)}</div><div class="pi"><b>${w.n}</b><small>${w.d}${w.by?' · '+w.by:''}</small></div><div style="display:flex;flex-direction:column;gap:6px;align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="playVideo('${w.video}')">▶ Guarda</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="workoutDoneMinutes('${(w.n||'').replace(/'/g,"\\'")}')">✓ Fatto</button>${(w.id&&meId&&w.owner===meId)?`<button class="btn sm" style="width:auto;padding:7px 12px;font-size:12px;background:var(--coral);box-shadow:none" onclick="deleteWorkout('${w.id}')">🗑 Elimina</button>`:''}</div></div>`).join(''):`<div class="card" style="text-align:center"><div style="color:var(--muted)">${ic('dumbbell',34)}</div><div class="sub">Ancora nessun video di allenamento. ${canTrainer()?'Carica il primo!':'I personal trainer verificati li pubblicheranno qui.'}</div></div>`}</div>
 
 
-  <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0">🔥</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div>
+  <div class="card tight" style="margin-bottom:12px"><div class="row" style="padding:6px 0"><div class="ri" style="background:#fff0e0;color:#c8781f">${ic('flame',22)}</div><div class="rt"><b>${S.workoutKcal||0} kcal bruciate oggi</b><small>con gli allenamenti registrati (calcolate sul tuo peso ${S.wNow||'?'} kg)</small></div>${S.workoutKcal?`<button class="btn sm sec" style="width:auto;padding:8px 10px" onclick="resetBurned()">azzera</button>`:''}</div>
   ${(S.workoutLog&&S.workoutLog.length)?`<div class="sub" style="margin:8px 0 4px">Fatti oggi (tocca 🗑 se hai sbagliato):</div>${S.workoutLog.map((it,i)=>`<div class="row" style="padding:6px 0"><div class="rt"><b>✓ ${it.name}</b><small>~${it.kcal} kcal</small></div><button onclick="rmWorkoutDone(${i})" style="background:none;border:none;color:var(--coral);font-size:16px;cursor:pointer">🗑</button></div>`).join('')}`:''}</div>
 
   <div class="section-title" style="margin-top:0">Libreria per il tuo obiettivo</div>
-  ${prog.list.map(w=>`
-    <div class="pro">
-      <div class="ph" style="background:${w.bg}">${w.ic}</div>
-      <div class="pi"><b>${w.n}</b><small>${w.d} · ~${Math.round(w.k*(S.wNow||65)/65)} kcal per te</small></div>
+  ${prog.list.map(w=>{ const vid=libVideo(w.n); const nm=(w.n||'').replace(/'/g,"\\'"), dd=(w.d||'').replace(/'/g,"\\'"); return `
+    <div class="pro" style="flex-wrap:wrap">
+      <div class="ph" style="background:${w.bg};color:var(--green-d)">${ic('dumbbell',22)}</div>
+      <div class="pi"><b>${w.n}</b><small>${w.d} · ~${Math.round(w.k*(S.wNow||65)/65)} kcal per te${vid?' · 🎬 video disponibile':''}</small></div>
       <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
-        <button class="btn sm" style="width:auto;padding:8px 12px" onclick="toast('Avvio: ${w.n} ▶')">▶ Avvia</button>
-        <button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="logWorkoutDone('${w.n}',${w.k})">✓ Fatto</button>
+        <button class="btn sm" style="width:auto;padding:8px 12px" onclick="${vid?`playVideo('${vid.video}')`:`toast('Nessun video caricato per questo allenamento')`}">▶ ${vid?'Guarda':'Avvia'}</button>
+        <button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="logWorkoutDone('${nm}',${w.k})">✓ Fatto</button>
       </div>
-    </div>`).join('')}
-  <div class="tiny">Tocca "✓ Fatto" dopo un allenamento: calcolo le calorie bruciate sul tuo peso. Cambiando obiettivo nel Profilo cambiano sia i pasti sia gli allenamenti.</div>
+      ${canTrainer()?`<div style="width:100%;margin-top:8px"><button class="btn sec sm" style="padding:8px" onclick="uploadWorkoutVideo('${nm}','${dd}')">＋ Carica un video per "${w.n}"</button></div>`:''}
+    </div>`;}).join('')}
+  <div class="tiny">Tocca "✓ Fatto" dopo un allenamento: calcolo le calorie bruciate sul tuo peso. I personal trainer possono caricare un video reale per ogni allenamento, visibile a tutti.</div>
   `;
+}
+function libVideo(name){ return allWorkouts().find(w=>(w.n||'').toLowerCase()===(name||'').toLowerCase()); }
+function uploadWorkoutVideo(nm,dd){ if(!canTrainer()){toast('Solo i personal trainer verificati possono caricare video');return;}
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
+  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
+    if(cloudOn()&&loggedIn()){ toast('Caricamento video…'); try{ const url=await uploadBlob(f,f.name||'workout.mp4'); await cloudAddWorkout({n:nm,d:dd||'',video:url,by:S.user.name}); _wkLoaded=false; await cloudLoadWorkouts(); _wkLoaded=true; }catch(e){ toast('Errore cloud: '+(e.message||e)); return; } }
+    else { const url=URL.createObjectURL(f); S.customWorkouts=S.customWorkouts||[]; S.customWorkouts.unshift({id:'w'+Date.now(),owner:null,n:nm,d:dd||'',video:url,by:S.user.name}); save(); }
+    rebuild('allenamento'); toast('Video caricato 🎬 (visibile a tutti)');
+  };
+  inp.click();
 }
 function addWorkout(){
   if(!canTrainer()){toast('Solo i personal trainer verificati possono caricare allenamenti');return;}
   openForm({title:'Carica un allenamento',subtitle:'Sarà pubblico per tutti gli utenti',
     fields:[{id:'n',label:'Nome allenamento'},{id:'d',label:'Durata e livello',value:'30 min · Intermedio'}],
     submit:'Scegli il video →',
-    onSubmit:(v)=>{ if(!v.n||!v.n.trim()){toast('Inserisci il nome');return false;}
-      const nm=v.n.trim(), dd=(v.d||'').trim();
-      const inp=document.createElement('input'); inp.type='file'; inp.accept='video/*';
-      inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f)return;
-        if(cloudOn()&&loggedIn()){
-          toast('Caricamento video…');
-          try{ const url=await uploadBlob(f,f.name||'workout.mp4'); await cloudAddWorkout({n:nm,d:dd,video:url,by:S.user.name}); _wkLoaded=false; await cloudLoadWorkouts(); _wkLoaded=true; }
-          catch(e){ toast('Errore cloud: '+(e.message||e)); return; }
-        } else {
-          const url=URL.createObjectURL(f);
-          S.customWorkouts=S.customWorkouts||[]; S.customWorkouts.unshift({id:'w'+Date.now(),owner:null,n:nm,d:dd,video:url,by:S.user.name});
-          save();
-        }
-        rebuild('allenamento'); go('allenamento'); toast('Allenamento pubblicato 🎬 (visibile a tutti)');
-      };
-      inp.click();
-    }
+    onSubmit:(v)=>{ if(!v.n||!v.n.trim()){toast('Inserisci il nome');return false;} uploadWorkoutVideo(v.n.trim(),(v.d||'').trim()); }
   });
 }
 function playVideo(url){
