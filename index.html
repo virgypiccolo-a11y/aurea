@@ -534,7 +534,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -811,8 +811,10 @@ function logWorkoutDone(name,baseK,minutes){
   else { kcal=Math.round(5*w*((minutes||30)/60)); } // MET ~5 se sconosciuto
   S.workoutKcal=(S.workoutKcal||0)+kcal;
   S.workoutLog=S.workoutLog||[]; S.workoutLog.unshift({name,kcal});
+  S._everWorkout=true;
   save(); rebuild('home'); rebuild('allenamento');
   toast('💪 '+name+': ~'+kcal+' kcal bruciate (sul tuo peso)');
+  try{ saveScoreToday(); checkMilestones(true); }catch(e){}
 }
 function rmWorkoutDone(i){ const l=S.workoutLog||[]; const it=l[i]; if(!it)return; S.workoutKcal=Math.max(0,(S.workoutKcal||0)-(it.kcal||0)); l.splice(i,1); save(); rebuild('home'); rebuild('allenamento'); toast('Allenamento rimosso · calorie ricalcolate'); }
 function resetBurned(){ S.workoutKcal=0; S.workoutLog=[]; save(); rebuild('home'); rebuild('allenamento'); toast('Calorie allenamento azzerate'); }
@@ -964,6 +966,7 @@ function renderCartBadge(){
 /* menu con tutte le funzioni */
 const MENU=[
   {id:'score',icn:'sparkle',l:'Aurea Score'},
+  {id:'percorso',icn:'heart',l:'Percorso'},
   {id:'community',icn:'users',l:'Community'},
   {id:'ciclo',icn:'flower',l:'Ciclo',fem:true},
   {id:'recupero',icn:'rainbow',l:'Recupero'},
@@ -1031,7 +1034,7 @@ function scoreSuggestion(){ const b=aureaBreakdown();
   let worst=null,wv=101; Object.keys(b).forEach(k=>{ const v=(b[k]==null?0:b[k]); if(v<wv){wv=v;worst=k;} });
   return worst?{comp:worst,...acts[worst],val:b[worst]}:null;
 }
-function setMoodToday(v){ S.moodToday=v; save(); saveScoreToday(); rebuild('score'); rebuild('home'); toast('Umore registrato'); }
+function setMoodToday(v){ S.moodToday=v; save(); saveScoreToday(); rebuild('score'); rebuild('home'); toast('Umore registrato'); try{checkMilestones(true);}catch(e){} }
 function scoreCardHome(){ const r=saveScoreToday(); const d=scoreDelta(); const col=scoreColor(r.score);
   return `<div class="card" onclick="go('score')" style="cursor:pointer">
     <div class="ring-wrap">
@@ -1103,6 +1106,88 @@ function scorePhrase(score,b,d){
   if(best&&worst&&best!==worst) s+='Bene su '+L(best)+', ti manca qualcosa su '+L(worst)+'.';
   else if(worst) s+='Puoi migliorare su '+L(worst)+'.';
   return s||'Continua a registrare i tuoi dati per uno Score più preciso.';
+}
+/* ============ PERCORSO BENESSERE (traguardi) + CONDIVISIONE AUTO ============ */
+function bestScore(){ const cur=aureaScore().score; const h=(S.scoreHistory||[]).reduce((m,x)=>Math.max(m,x.score),0); return Math.max(cur,h); }
+const MILESTONES=[
+  {key:'start', icn:'sparkle', title:()=>'Inizio del percorso', cond:()=>true},
+  {key:'firstWorkout', icn:'dumbbell', title:()=>'Primo allenamento completato', cond:()=>!!S._everWorkout},
+  {key:'steps10k', icn:'steps', title:()=>'10.000 passi in un giorno', cond:()=>(S.steps||0)>=10000 || !!S._ever10k},
+  {key:'w1', icn:'flame', title:()=>'-1 kg', cond:()=>(S.wStart-S.wNow)>=1},
+  {key:'w3', icn:'flame', title:()=>'-3 kg', cond:()=>(S.wStart-S.wNow)>=3},
+  {key:'w5', icn:'flame', title:()=>'-5 kg', cond:()=>(S.wStart-S.wNow)>=5},
+  {key:'streak7', icn:'flame', title:()=>'7 giorni consecutivi', cond:()=>scoreStreak()>=7},
+  {key:'streak30', icn:'flame', title:()=>'30 giorni consecutivi', cond:()=>scoreStreak()>=30},
+  {key:'score80', icn:'sparkle', title:()=>'Primo Aurea Score 80+', cond:()=>bestScore()>=80},
+  {key:'score100', icn:'sparkle', title:()=>'Aurea Score perfetto: 100', cond:()=>bestScore()>=100},
+  {key:'goal', icn:'heart', title:()=>'Obiettivo peso raggiunto', cond:()=>S.wGoal && S.wStart>S.wGoal && S.wNow<=S.wGoal}
+];
+function checkMilestones(promptShare){
+  S.milestones=S.milestones||[]; const have=new Set(S.milestones.map(x=>x.key)); const added=[];
+  MILESTONES.forEach(def=>{ if(!have.has(def.key)){ let ok=false; try{ok=def.cond();}catch(e){} if(ok){ const rec={key:def.key,title:def.title(),date:todayKey(),icn:def.icn,shared:false}; S.milestones.push(rec); added.push(rec); } } });
+  if(added.length){ try{save();}catch(e){} }
+  if(promptShare&&added.length){ const notable=added.filter(a=>a.key!=='start'); const pick=notable.length?notable[notable.length-1]:null; if(pick)proposeShare(pick); }
+  return added;
+}
+function svgDataUrl(svg){ return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); }
+function milestoneGraphic(m){
+  const name=(S.user.name||'Io'); const dt=fmtDateIt(m.date); const score=aureaScore().score;
+  const title=(m.title||'Traguardo').replace(/&/g,'&amp;');
+  const t1=title.length>20?title.slice(0,title.lastIndexOf(' ',20)||20):title;
+  const t2=title.length>20?title.slice((title.lastIndexOf(' ',20)||20)+1):'';
+  return `<svg xmlns='http://www.w3.org/2000/svg' width='540' height='720' viewBox='0 0 540 720'>
+    <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#128a63'/><stop offset='1' stop-color='#4bd4a6'/></linearGradient></defs>
+    <rect width='540' height='720' rx='44' fill='url(#g)'/>
+    <text x='270' y='96' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='30' font-weight='800' letter-spacing='5'>AURÉA</text>
+    <text x='270' y='126' text-anchor='middle' fill='rgba(255,255,255,.82)' font-family='Helvetica,Arial,sans-serif' font-size='16' letter-spacing='2'>PERCORSO BENESSERE</text>
+    <circle cx='270' cy='300' r='104' fill='rgba(255,255,255,.16)'/>
+    <circle cx='270' cy='300' r='104' fill='none' stroke='#fff' stroke-width='6' stroke-dasharray='${Math.round(2*Math.PI*104*score/100)} 999'/>
+    <text x='270' y='292' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='72' font-weight='800'>${score}</text>
+    <text x='270' y='330' text-anchor='middle' fill='rgba(255,255,255,.85)' font-family='Helvetica,Arial,sans-serif' font-size='18'>Aurea Score</text>
+    <text x='270' y='470' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='40' font-weight='800'>${t1}</text>
+    ${t2?`<text x='270' y='516' text-anchor='middle' fill='#fff' font-family='Helvetica,Arial,sans-serif' font-size='40' font-weight='800'>${t2}</text>`:''}
+    <text x='270' y='600' text-anchor='middle' fill='rgba(255,255,255,.9)' font-family='Helvetica,Arial,sans-serif' font-size='24' font-weight='700'>${name}</text>
+    <text x='270' y='636' text-anchor='middle' fill='rgba(255,255,255,.75)' font-family='Helvetica,Arial,sans-serif' font-size='18'>${dt}</text>
+  </svg>`;
+}
+let _shareM=null;
+function proposeShare(m){ _shareM=m; const url=svgDataUrl(milestoneGraphic(m));
+  modalSheet(`<div class="grab"></div>
+    <h3 style="text-align:center;margin:0 0 4px;font-size:17px">🎉 Nuovo traguardo!</h3>
+    <div class="sub" style="text-align:center;margin-bottom:12px">${m.title}</div>
+    <img src="${url}" style="width:58%;display:block;margin:0 auto 14px;border-radius:18px;box-shadow:0 10px 28px rgba(0,0,0,.18)">
+    <div class="field"><label>Descrizione</label><input id="share-cap" value="${(m.title||'').replace(/"/g,'&quot;')} 💪"></div>
+    <button class="btn" onclick="doShareMilestone()">Pubblica in Community</button>
+    <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Non ora</button>`);
+}
+function doShareMilestone(){ const cap=(document.getElementById('share-cap')||{}).value||''; const m=_shareM; const box=document.querySelector('.app-modal'); if(box)box.remove(); if(m)publishMilestone(m,cap); }
+async function publishMilestone(m,caption){
+  const svg=milestoneGraphic(m); const dataUrl=svgDataUrl(svg); const cap=(caption||m.title||'Nuovo traguardo').trim();
+  if(cloudOn()&&loggedIn()){
+    try{ const blob=new Blob([svg],{type:'image/svg+xml'}); const url=await uploadBlob(blob,'traguardo.svg');
+      const row={user_id:cloudUser.id,author:(S.user.name||'utente'),caption:cap,type:'Traguardo',diet:S.diet,goal:S.user.goal,video_url:url,likes:0,is_image:true};
+      let {error}=await SB.from('posts').insert(row); if(error&&/column/.test(error.message||'')){ delete row.is_image; const r2=await SB.from('posts').insert(row); error=r2.error; }
+      if(error)throw error;
+    }catch(e){ toast('Errore pubblicazione: '+(e.message||e)); return; }
+  } else {
+    MYSHORTS.unshift({id:'my'+Date.now(),user:(S.user.name||'io'),me:true,src:dataUrl,isImage:true,caption:cap,type:'Traguardo',overlays:[],music:null,voiceover:null,muteOriginal:false,diet:S.diet,goal:S.user.goal,likes:0,liked:false});
+  }
+  m.shared=true; save(); go('community'); comTab('perte'); toast('Traguardo condiviso! 🎉');
+}
+function shareMilestoneByKey(k){ const m=(S.milestones||[]).find(x=>x.key===k); if(m)proposeShare(m); }
+function fmtDateIt(d){ if(!d)return''; const p=(''+d).split('-'); if(p.length<3)return d; const mon=['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic']; return (+p[2])+' '+mon[(+p[1])-1]+' '+p[0]; }
+function percorsoHTML(){
+  checkMilestones(false);
+  const ms=(S.milestones||[]).slice().sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));
+  return `<button class="back" onclick="go('profilo')">← Profilo</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">La tua evoluzione</div><div class="n">🌱 Percorso Benessere</div></div></div>
+  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('sparkle',78)}</span><h4>${ms.length} traguard${ms.length===1?'o':'i'}</h4><p>Ogni conquista del tuo percorso in una linea del tempo. Condividile quando vuoi.</p></div>
+  ${ms.length?`<div class="card">${ms.map(m=>`<div class="row" style="align-items:flex-start">
+    <div class="ri" style="background:var(--mint);color:var(--green-d)">${ic(m.icn||'sparkle',20)}</div>
+    <div class="rt" style="flex:1"><b>${m.title}</b><small>${fmtDateIt(m.date)}</small></div>
+    <button class="btn sm ${m.shared?'sec':''}" style="width:auto;padding:7px 12px;font-size:12px" onclick="shareMilestoneByKey('${m.key}')">${m.shared?'Condiviso':'Condividi'}</button>
+  </div>`).join('')}</div>`:`<div class="card" style="text-align:center"><div style="color:var(--muted)">${ic('sparkle',36)}</div><div class="sub" style="margin-top:6px">Il tuo percorso inizia ora. Registra pasti, passi, sonno e allenamenti: i traguardi compariranno qui automaticamente.</div></div>`}
+  <div class="tiny">I traguardi si sbloccano da soli quando raggiungi obiettivi di peso, passi, costanza e Aurea Score.</div>`;
 }
 function homeHTML(){
   if(isProMode()) return proDashHTML();
@@ -1266,10 +1351,10 @@ function openSlider(o){
   (document.querySelector('.phone')||document.body).appendChild(box);
 }
 function closeSlider(){ const b=document.getElementById('slider-panel'); if(b)b.remove(); }
-function setWaterHome(){ openSlider({title:"Bicchieri d'acqua oggi",min:0,max:20,step:1,value:S.water||0,unit:' bicchieri',onSet:function(n){ S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); }}); }
-function setStepsManual(){ openSlider({title:'Passi di oggi',min:0,max:20000,step:500,value:S.steps||0,fmt:function(v){return v.toLocaleString('it-IT')+' passi';},onSet:function(n){ S.steps=n; save(); rebuild('home'); toast('Passi: '+n.toLocaleString('it-IT')); }}); }
+function setWaterHome(){ openSlider({title:"Bicchieri d'acqua oggi",min:0,max:20,step:1,value:S.water||0,unit:' bicchieri',onSet:function(n){ S.water=n; save(); rebuild('home'); rebuild('diario'); toast('Acqua: '+n+' bicchieri'); try{saveScoreToday();checkMilestones(true);}catch(e){} }}); }
+function setStepsManual(){ openSlider({title:'Passi di oggi',min:0,max:20000,step:500,value:S.steps||0,fmt:function(v){return v.toLocaleString('it-IT')+' passi';},onSet:function(n){ S.steps=n; if(n>=10000)S._ever10k=true; save(); rebuild('home'); toast('Passi: '+n.toLocaleString('it-IT')); try{saveScoreToday();checkMilestones(true);}catch(e){} }}); }
 function sleepNeeded(){ const a=S.user.age||30; if(a<18) return {min:8,ideal:9}; if(a>64) return {min:7,ideal:8}; return {min:7,ideal:8}; }
-function setSleep(){ openSlider({title:'Ore di sonno stanotte',min:0,max:14,step:0.5,value:S.sleep||7,fmt:function(v){return v+'h';},onSet:function(h){ S.sleep=+(+h).toFixed(1); save(); rebuild('home'); const need=sleepNeeded(); toast(h<need.min?('Sonno: '+S.sleep+'h · sotto il consigliato, guarda i consigli'):('Sonno aggiornato: '+S.sleep+'h')); }}); }
+function setSleep(){ openSlider({title:'Ore di sonno stanotte',min:0,max:14,step:0.5,value:S.sleep||7,fmt:function(v){return v+'h';},onSet:function(h){ S.sleep=+(+h).toFixed(1); save(); rebuild('home'); const need=sleepNeeded(); toast(h<need.min?('Sonno: '+S.sleep+'h · sotto il consigliato, guarda i consigli'):('Sonno aggiornato: '+S.sleep+'h')); try{saveScoreToday();checkMilestones(true);}catch(e){} }}); }
 function sleepHabits(){ return ["📵 Niente schermi 1h prima","🕒 Orari regolari","☕ Stop caffeina dopo le 16","🌡️ Camera fresca e buia","🍵 Tisana rilassante","🧘 Respirazione prima di dormire"]; }
 function sleepAdvice(){
   const need=sleepNeeded(); const h=S.sleep||0;
@@ -1288,7 +1373,7 @@ function editWeight(){
     fields:[{id:'w',label:'Peso di oggi (kg)',type:'number',value:S.wNow}],
     submit:'Salva peso',
     onSubmit:(v)=>{ const n=parseFloat((''+v.w).replace(',','.')); if(isNaN(n)||n<30||n>300){toast('Valore non valido');return false;}
-      S.wNow=+n.toFixed(1); S.weight=S.wNow; const wp=weightPlan(); rebuild('home');rebuild('piano');go('home'); toast('Peso aggiornato · piano: '+wp.kcal+' kcal'); }
+      S.wNow=+n.toFixed(1); S.weight=S.wNow; const wp=weightPlan(); rebuild('home');rebuild('piano');go('home'); toast('Peso aggiornato · piano: '+wp.kcal+' kcal'); try{saveScoreToday();checkMilestones(true);}catch(e){} }
   });
 }
 /* Database alimenti singoli · kcal per 100 g (fonte: valori medi CREA/USDA) */
@@ -2519,6 +2604,7 @@ function profiloHTML(){
   </div>
 
   <div class="card tight">
+    <div class="row" onclick="go('percorso')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('sparkle',22)}</div><div class="rt"><b>Percorso Benessere</b><small>i tuoi traguardi, in una timeline</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('storia')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📋</div><div class="rt"><b>Storia clinica</b><small>personalizza il piano</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--violet-s)">🎓</div><div class="rt"><b>${S.pro?'Il mio profilo professionista':'Diventa professionista'}</b><small>${S.pro?(S.pro.status==='verificato'?'verificato ✔️':'in verifica ⏳'):'nutrizionista, medico, PT…'}</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('cloud')" style="cursor:pointer"><div class="ri" style="background:#e8f1ff">☁️</div><div class="rt"><b>${loggedIn()?'Account cloud':'Attiva modalità reale'}</b><small>${loggedIn()?(cloudUser.email):'account veri + video reali'}</small></div><div class="rv">›</div></div>
@@ -4140,7 +4226,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -4164,7 +4250,7 @@ function afterRender(id){
   if(id==='allenamento'){ if(cloudOn()&&!_wkLoaded&&!_wkFetching){ _wkFetching=true; cloudLoadWorkouts().then(()=>{ _wkLoaded=true; _wkFetching=false; if(curScreen==='allenamento')rebuild('allenamento'); }); } }
   if(id==='clientchat'){renderChat();}
   if(id==='clientplans'){renderPlans();}
-  if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); save(); } }catch(e){} }
+  if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); checkMilestones(false); save(); } }catch(e){} }
 }
 function boot(){
   restore();
