@@ -120,7 +120,12 @@ body{
 
 /* Buttons */
 .btn{display:block;width:100%;text-align:center;background:var(--green);color:#fff;border:none;border-radius:16px;
-  padding:15px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 8px 20px rgba(31,174,126,.35)}
+  padding:15px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 8px 20px rgba(31,174,126,.35);
+  transition:transform .08s ease, box-shadow .15s ease, opacity .15s ease}
+.btn:active{transform:scale(.96);box-shadow:0 4px 12px rgba(31,174,126,.28)}
+.btn:disabled{cursor:default}
+.spin{display:inline-block;width:15px;height:15px;border:2.5px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;vertical-align:-3px;margin-right:7px;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .btn.sec{background:var(--card);color:var(--ink);border:1px solid var(--line);box-shadow:none}
 .btn.pink{background:var(--coral);box-shadow:0 8px 20px rgba(255,111,139,.35)}
 .btn.violet{background:var(--violet);box-shadow:0 8px 20px rgba(124,92,255,.35)}
@@ -4667,8 +4672,8 @@ function cloudHTML(){
     <div class="card">
       <div class="field"><label>Email</label><input id="cl-email" type="email" placeholder="tuamail@esempio.com"></div>
       <div class="field"><label>Password</label><input id="cl-pass" type="password" placeholder="min 6 caratteri"></div>
-      <button class="btn" onclick="doSignIn()">Accedi</button>
-      <button class="btn sec" style="margin-top:10px" onclick="doSignUp()">Crea un nuovo account</button>
+      <button class="btn" onclick="doSignIn(this)">Accedi</button>
+      <button class="btn sec" style="margin-top:10px" onclick="doSignUp(this)">Crea un nuovo account</button>
     </div>
     <button class="btn sec sm" onclick="confirmBox('Rimuovere la configurazione cloud?',()=>{localStorage.removeItem('aurea_cloud');SB=null;rebuild('cloud');go('cloud');},{icon:'☁️',yes:'Rimuovi'})">Cambia configurazione</button>`;
   }
@@ -4690,22 +4695,26 @@ function saveCloudCfg(){
   if(cloudInit()){ toast('Cloud attivato! Ora accedi.'); } else { toast('Libreria non caricata: apri l\'app online'); }
   rebuild('cloud'); go('cloud');
 }
-async function doSignUp(){
+async function doSignUp(btn){
   const e=(document.getElementById('cl-email').value||'').trim(), p=(document.getElementById('cl-pass').value||'');
   if(!e||p.length<6){toast('Email valida e password ≥6 caratteri');return;}
-  toast('Creazione account…');
+  const done=btnBusy(btn,'Creazione account…');
   try{ await cloudSignUp(e,p);
     // porta i dati locali sul cloud al primo accesso
     if(cloudUser){ await cloudSaveProfile(); }
-    toast('Account creato! Controlla l\'email se richiesto, poi accedi.'); rebuild('cloud'); go('cloud');
-  }catch(err){ toast('Errore: '+(err.message||err)); }
+    done(); toast('Account creato! Controlla l\'email se richiesto, poi accedi.'); rebuild('cloud'); go('cloud');
+  }catch(err){ done(); const m=(err&&err.message)||''; if(/already registered|already exists|user already/i.test(m)) toast('Questa email è già registrata. Prova ad accedere.'); else toast('Errore: '+m); }
 }
-async function doSignIn(){
+async function doSignIn(btn){
   const e=(document.getElementById('cl-email').value||'').trim(), p=(document.getElementById('cl-pass').value||'');
   if(!e||!p){toast('Inserisci email e password');return;}
-  toast('Accesso…');
+  const done=btnBusy(btn,'Accesso…');
   try{ await cloudSignIn(e,p); rebuildAll(); go('home'); preloadCloud(); toast('Bentornata '+(S.user.name||'')+'! ☁️'); }
-  catch(err){ toast('Accesso fallito: '+(err.message||err)); }
+  catch(err){ done(); const m=(err&&err.message)||'';
+    if(/invalid login credentials|invalid credentials|invalid.*password|wrong password/i.test(m)) toast('Email o password errati. Riprova.');
+    else if(/email not confirmed|not confirmed|confirm/i.test(m)) toast('Devi prima verificare l\'email che ti abbiamo inviato.');
+    else toast('Accesso fallito: '+m);
+  }
 }
 async function doSignOut(){ await cloudSignOut(); rebuild('cloud'); go('cloud'); showAuthWall(); toast('Uscita effettuata'); }
 /* schermata iniziale: accedi / registrati */
@@ -4726,7 +4735,7 @@ function authTab(mode,btn){
   if(mode==='login'){
     f.innerHTML=`<div class="field"><label>Email</label><input id="aw-email" type="email" placeholder="tuamail@esempio.com"></div>
       <div class="field"><label>Password</label><input id="aw-pass" type="password" placeholder="password"></div>
-      <button class="btn" onclick="authLogin()">Accedi</button>
+      <button class="btn" onclick="authLogin(this)">Accedi</button>
       <div class="tiny" style="margin-top:10px">Nuovo utente? Tocca "Registrati" qui sopra.</div>`;
   } else {
     f.innerHTML=`<div class="field"><label>Nome</label><input id="aw-name" placeholder="Il tuo nome"></div>
@@ -4742,7 +4751,7 @@ function authTab(mode,btn){
       <label style="display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.5;margin-top:8px;text-align:left"><input type="checkbox" id="aw-terms" style="margin-top:2px;width:17px;height:17px;flex:0 0 17px"><span>Ho letto e accetto i <a onclick="openDocModal('termini')" style="color:var(--green-d);font-weight:700;cursor:pointer">Termini di Servizio</a>.</span></label>
       <label style="display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.5;margin-top:8px;text-align:left"><input type="checkbox" id="aw-health" style="margin-top:2px;width:17px;height:17px;flex:0 0 17px"><span>Acconsento al trattamento dei miei <b>dati sulla salute</b> per personalizzare piani e consigli (<a onclick="openDocModal('privacy')" style="color:var(--green-d);font-weight:700;cursor:pointer">Privacy</a>).</span></label>
       <label style="display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.5;margin-top:8px;text-align:left"><input type="checkbox" id="aw-mkt" style="margin-top:2px;width:17px;height:17px;flex:0 0 17px"><span>(Facoltativo) Voglio ricevere consigli e novità via email.</span></label>
-      <button class="btn" style="margin-top:12px" onclick="authRegister()">Registrati</button>
+      <button class="btn" style="margin-top:12px" onclick="authRegister(this)">Registrati</button>
       <div class="tiny" style="margin-top:10px">Ti invieremo un'email di verifica: confermala, poi torna qui e accedi.</div>`;
   }
 }
@@ -4769,15 +4778,21 @@ function closeDocModal(){ const b=document.getElementById('doc-modal'); if(b)b.r
 function pwRules(p){ return {len:(p||'').length>=8, up:/[A-Z]/.test(p||''), low:/[a-z]/.test(p||''), num:/[0-9]/.test(p||'')}; }
 function pwCheck(p){ const r=pwRules(p); const set=(id,ok)=>{const e=document.getElementById(id);if(e)e.innerHTML=(ok?'🟢':'⚪')+e.textContent.slice(1);}; set('pw-len',r.len);set('pw-up',r.up);set('pw-low',r.low);set('pw-num',r.num); }
 function pwOk(p){ const r=pwRules(p); return r.len&&r.up&&r.low&&r.num; }
-async function authLogin(){
+function btnBusy(btn,txt){ if(!btn)return function(){}; const old=btn.innerHTML; btn.disabled=true; btn.style.opacity='.7'; btn.innerHTML='<span class="spin"></span>'+(txt||'Attendere…'); return function(){ btn.disabled=false; btn.style.opacity=''; btn.innerHTML=old; }; }
+async function authLogin(btn){
   if(!cloudOn()){toast('Attiva prima il cloud in Menu → Cloud');return;}
   const e=(document.getElementById('aw-email').value||'').trim(), p=document.getElementById('aw-pass').value||'';
   if(!e||!p){toast('Inserisci email e password');return;}
-  toast('Accesso…');
+  const done=btnBusy(btn,'Accesso…');
   try{ await cloudSignIn(e,p); hideAuthWall(); rebuildAll(); if(!S.setup){showOnboard();}else{go('home');} preloadCloud(); toast('Bentornata!'); }
-  catch(err){ toast(/confirm|not confirmed/i.test(err.message||'')?'Prima verifica l\'email che ti abbiamo inviato':'Accesso fallito: '+(err.message||err)); }
+  catch(err){ done(); const m=(err&&err.message)||'';
+    if(/invalid login credentials|invalid credentials|invalid.*password|wrong password/i.test(m)) toast('Email o password errati. Riprova.');
+    else if(/email not confirmed|not confirmed|confirm/i.test(m)) toast('Devi prima verificare l\'email che ti abbiamo inviato.');
+    else if(/network|fetch|failed to fetch/i.test(m)) toast('Connessione assente. Controlla la rete e riprova.');
+    else toast('Accesso fallito: '+m);
+  }
 }
-async function authRegister(){
+async function authRegister(btn){
   if(!cloudOn()){toast('Attiva prima il cloud in Menu → Cloud');return;}
   const n=(document.getElementById('aw-name').value||'').trim();
   const e=(document.getElementById('aw-email').value||'').trim(), p=document.getElementById('aw-pass').value||'';
@@ -4788,11 +4803,14 @@ async function authRegister(){
   if(!tk||!tk.checked){toast('Devi accettare i Termini di Servizio');return;}
   if(!hk||!hk.checked){toast('Devi acconsentire al trattamento dei dati sulla salute');return;}
   S.consent={age18:true,terms:true,health:true,marketing:!!(mk&&mk.checked),version:POLICY_VERSION,at:new Date().toISOString()};
-  toast('Creazione account…');
+  const done=btnBusy(btn,'Creazione account…');
   try{ await cloudSignUp(e,p); if(n)S.user.name=n;
     cloudLogConsent('signup',S.consent);
-    document.getElementById('auth-forms').innerHTML=`<div class="alert ok" style="margin:0"><span>📧</span><div><b>Email di verifica inviata a ${e}.</b> Apri la mail, premi il link di conferma, poi torna qui e tocca "Accedi".</div></div><button class="btn" style="margin-top:14px" onclick="authTab('login')">Vai al login</button>`;
-  }catch(err){ toast('Errore: '+(err.message||err)); }
+    document.getElementById('auth-forms').innerHTML=`<div class="alert ok" style="margin:0"><span>📧</span><div><b>Account creato per ${e}.</b> Se la verifica via email è attiva, apri la mail e premi il link di conferma, poi torna qui e tocca "Accedi".</div></div><button class="btn" style="margin-top:14px" onclick="authTab('login')">Vai al login</button>`;
+  }catch(err){ done(); const m=(err&&err.message)||'';
+    if(/already registered|already exists|user already/i.test(m)) toast('Questa email è già registrata. Vai su "Accedi".');
+    else toast('Errore: '+m);
+  }
 }
 
 /* ============ BUILD ============ */
