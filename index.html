@@ -443,6 +443,7 @@ const S = {
   cycleTracking:true,
   scoreHistory:[],
   moodToday:null,
+  milestones:[], challenges:{}, badges:[],
   planChoices:{},
   cart:[],
   reminders:[
@@ -534,7 +535,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca'];
+const REFRESH_ON_SHOW=['home','piano','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -842,7 +843,7 @@ function logWorkoutDone(name,baseK,minutes){
   else { kcal=Math.round(5*w*((minutes||30)/60)); } // MET ~5 se sconosciuto
   S.workoutKcal=(S.workoutKcal||0)+kcal;
   S.workoutLog=S.workoutLog||[]; S.workoutLog.unshift({name,kcal});
-  S._everWorkout=true;
+  S._everWorkout=true; S._workoutCount=(S._workoutCount||0)+1;
   save(); rebuild('home'); rebuild('allenamento');
   toast('💪 '+name+': ~'+kcal+' kcal bruciate (sul tuo peso)');
   try{ saveScoreToday(); checkMilestones(true); }catch(e){}
@@ -999,6 +1000,8 @@ const MENU=[
   {id:'score',icn:'sparkle',l:'Aurea Score'},
   {id:'percorso',icn:'heart',l:'Percorso'},
   {id:'ricerca',icn:'grid',l:'Ricerca'},
+  {id:'sfide',icn:'flame',l:'Sfide'},
+  {id:'badge',icn:'shield',l:'Badge'},
   {id:'community',icn:'users',l:'Community'},
   {id:'ciclo',icn:'flower',l:'Ciclo',fem:true},
   {id:'recupero',icn:'rainbow',l:'Recupero'},
@@ -1220,6 +1223,69 @@ function percorsoHTML(){
     <button class="btn sm ${m.shared?'sec':''}" style="width:auto;padding:7px 12px;font-size:12px" onclick="shareMilestoneByKey('${m.key}')">${m.shared?'Condiviso':'Condividi'}</button>
   </div>`).join('')}</div>`:`<div class="card" style="text-align:center"><div style="color:var(--muted)">${ic('sparkle',36)}</div><div class="sub" style="margin-top:6px">Il tuo percorso inizia ora. Registra pasti, passi, sonno e allenamenti: i traguardi compariranno qui automaticamente.</div></div>`}
   <div class="tiny">I traguardi si sbloccano da soli quando raggiungi obiettivi di peso, passi, costanza e Aurea Score.</div>`;
+}
+/* ============ SFIDE + BADGE (gamification) ============ */
+function addMilestone(key,title,icn,promptShare){ S.milestones=S.milestones||[]; if(S.milestones.some(m=>m.key===key))return; const rec={key,title,date:todayKey(),icn:icn||'sparkle',shared:false}; S.milestones.push(rec); save(); if(promptShare)proposeShare(rec); }
+const CHALLENGES=[
+  {id:'steps30', t:'30 giorni · 10.000 passi', d:'Cammina almeno 10.000 passi al giorno.', icn:'steps', target:30, day:()=>(S.steps||0)>=10000},
+  {id:'water7', t:'Idratazione · 7 giorni', d:'Raggiungi il tuo obiettivo d\'acqua ogni giorno.', icn:'drop', target:7, day:()=>(S.water||0)>=(S.waterGoal||8)},
+  {id:'workout12', t:'12 allenamenti', d:'Allenati 12 volte (circa 3 a settimana).', icn:'dumbbell', target:12, day:()=>((S.workoutLog&&S.workoutLog.length>0)||(S.workoutKcal||0)>0)},
+  {id:'sleep7', t:'Dormi meglio · 7 giorni', d:'Dormi almeno il minimo consigliato per 7 notti.', icn:'moon', target:7, day:()=>{ if(S.sleep==null)return false; return S.sleep>=sleepNeeded().min; }},
+  {id:'healthy7', t:'Mangia sano · 7 giorni', d:'Tieni l\'alimentazione in verde per 7 giorni.', icn:'piano', target:7, day:()=>{ const b=aureaBreakdown(); return b.alimentazione!=null&&b.alimentazione>=70; }}
+];
+function chById(id){ return CHALLENGES.find(c=>c.id===id); }
+function joinChallenge(id){ S.challenges=S.challenges||{}; S.challenges[id]=S.challenges[id]||{joined:true,days:[],done:false}; S.challenges[id].joined=true; save(); checkChallenges(); rebuild('sfide'); go('sfide'); toast('Ti sei iscritto alla sfida! 💪'); }
+function leaveChallenge(id){ if(S.challenges&&S.challenges[id]){S.challenges[id].joined=false;} save(); rebuild('sfide'); go('sfide'); toast('Sfida abbandonata'); }
+function checkChallenges(){ S.challenges=S.challenges||{}; const tk=todayKey(); let done=null;
+  CHALLENGES.forEach(c=>{ const st=S.challenges[c.id]; if(!st||!st.joined||st.done)return; let ok=false; try{ok=c.day();}catch(e){} if(ok&&st.days.indexOf(tk)<0){ st.days.push(tk); if(st.days.length>=c.target){ st.done=true; done=c; } } });
+  try{save();}catch(e){}
+  if(done){ awardBadge('ch_'+done.id, 'Sfida: '+done.t, 'flame'); addMilestone('ch_'+done.id, 'Sfida completata: '+done.t, 'flame', true); }
+}
+const BADGES=[
+  {key:'streak7', t:'Costante', d:'7 giorni consecutivi', icn:'flame', cond:()=>scoreStreak()>=7},
+  {key:'streak30', t:'Inarrestabile', d:'30 giorni consecutivi', icn:'flame', cond:()=>scoreStreak()>=30},
+  {key:'wk10', t:'Atleta', d:'10 allenamenti completati', icn:'dumbbell', cond:()=>(S._workoutCount||0)>=10},
+  {key:'diary14', t:'Diario d\'oro', d:'14 pasti registrati', icn:'book', cond:()=>(S._diaryCount||0)>=14},
+  {key:'social', t:'Anima social', d:'Primo post pubblicato', icn:'users', cond:()=>!!S._everPosted},
+  {key:'score90', t:'Top form', d:'Aurea Score 90+', icn:'sparkle', cond:()=>bestScore()>=90},
+  {key:'goalb', t:'Obiettivo', d:'Obiettivo peso raggiunto', icn:'heart', cond:()=>S.wGoal&&S.wStart>S.wGoal&&S.wNow<=S.wGoal}
+];
+function awardBadge(key,title,icn){ S.badges=S.badges||[]; if(S.badges.some(b=>b.key===key))return false; S.badges.push({key,title:title||key,icn:icn||'sparkle',date:todayKey()}); return true; }
+function checkBadges(celebrate){ S.badges=S.badges||[]; const have=new Set(S.badges.map(b=>b.key)); let added=null;
+  BADGES.forEach(def=>{ if(!have.has(def.key)){ let ok=false; try{ok=def.cond();}catch(e){} if(ok){ S.badges.push({key:def.key,title:def.t,icn:def.icn,date:todayKey()}); added=def; } } });
+  if(added){ try{save();}catch(e){} if(celebrate)toast('🏅 Nuovo badge sbloccato: '+added.t); }
+}
+function xpTotal(){ return (S.badges||[]).length*50 + (S.milestones||[]).length*30 + Object.values(S.challenges||{}).filter(c=>c.done).length*100; }
+function levelInfo(){ const xp=xpTotal(); return {xp,lvl:Math.floor(xp/200)+1,inLvl:xp%200,nextNeed:200}; }
+function sfideHTML(){
+  checkChallenges();
+  const st=S.challenges||{};
+  return `<button class="back" onclick="go('community')">← Community</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Mettiti alla prova</div><div class="n">🏆 Sfide</div></div></div>
+  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('flame',78)}</span><h4>Sfide della community</h4><p>Partecipa, avanza ogni giorno e sblocca badge. I progressi si aggiornano da soli dai tuoi dati.</p></div>
+  ${CHALLENGES.map(c=>{ const s=st[c.id]; const days=s?s.days.length:0; const pct=Math.min(100,Math.round(days/c.target*100)); const joined=s&&s.joined; const done=s&&s.done; return `
+    <div class="card">
+      <div class="row" style="padding:0"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic(c.icn,22)}</div><div class="rt" style="flex:1"><b>${c.t}</b><small>${c.d}</small></div>${done?'<span class="pill" style="background:var(--mint);color:var(--green-d)">✓ Completata</span>':''}</div>
+      ${joined||done?`<div class="bar" style="height:10px;margin:12px 0 6px"><i style="width:${pct}%;background:linear-gradient(90deg,var(--green),#4bd4a6)"></i></div><div class="sub">${days}/${c.target} giorni · ${pct}%</div>`:''}
+      <div style="margin-top:12px">${done?`<button class="btn sm sec" onclick="shareMilestoneByKey('ch_${c.id}')">Condividi il traguardo</button>`:(joined?`<button class="btn sm sec" onclick="leaveChallenge('${c.id}')">Abbandona</button>`:`<button class="btn sm" onclick="joinChallenge('${c.id}')">Partecipa</button>`)}</div>
+    </div>`; }).join('')}
+  <div class="tiny">Presto: sfide tra amici e classifiche.</div>`;
+}
+function badgeHTML(){
+  checkBadges(false); const li=levelInfo(); const earned=new Set((S.badges||[]).map(b=>b.key));
+  return `<button class="back" onclick="go('profilo')">← Profilo</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">I tuoi riconoscimenti</div><div class="n">🏅 Badge & Livello</div></div></div>
+  <div class="card">
+    <div class="ring-wrap">
+      <div class="ring" style="width:96px;height:96px;flex:0 0 96px">${ring(li.inLvl/li.nextNeed,'var(--green)',96,11)}<div class="c-val"><b style="font-size:26px">${li.lvl}</b><small>livello</small></div></div>
+      <div style="flex:1"><div class="h" style="margin-bottom:4px">${li.xp} XP totali</div><div class="sub">Ti mancano <b>${li.nextNeed-li.inLvl} XP</b> al livello ${li.lvl+1}.</div><div class="sub" style="margin-top:6px">Guadagni XP con badge, traguardi e sfide.</div></div>
+    </div>
+  </div>
+  <div class="section-title">I tuoi badge</div>
+  <div class="grid2">${BADGES.map(def=>{ const has=earned.has(def.key); return `<div class="card" style="text-align:center;${has?'':'opacity:.5'}">
+    <div class="ri" style="width:52px;height:52px;margin:0 auto 8px;background:${has?'var(--mint)':'var(--line)'};color:${has?'var(--green-d)':'var(--muted)'}">${ic(def.icn,26)}</div>
+    <b style="font-size:14px">${def.t}</b><div class="sub" style="font-size:11px">${def.d}</div>${has?'<div class="pill" style="margin-top:6px;background:var(--mint);color:var(--green-d)">Sbloccato</div>':'<div class="pill" style="margin-top:6px">Da sbloccare</div>'}
+  </div>`; }).join('')}</div>`;
 }
 function homeHTML(){
   if(isProMode()) return proDashHTML();
@@ -1488,8 +1554,8 @@ function fAdd(id,name,pPer100){ const g=parseFloat((document.getElementById('g-'
   if(!k){toast('Inserisci i grammi o le calorie');return;}
   const prot=g?Math.round(pPer100*g/100):0;
   S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:name+(g?' ('+g+'g)':''),k:Math.round(k),prot});
-  S.intake.kcal+=Math.round(k); S.intake.prot=(S.intake.prot||0)+prot;
-  save(); toast('Aggiunto: '+name+' · '+Math.round(k)+' kcal'); rebuild('home');
+  S.intake.kcal+=Math.round(k); S.intake.prot=(S.intake.prot||0)+prot; S._diaryCount=(S._diaryCount||0)+1;
+  save(); toast('Aggiunto: '+name+' · '+Math.round(k)+' kcal'); rebuild('home'); try{checkBadges(true);}catch(e){}
   const gEl=document.getElementById('g-'+id); if(gEl)gEl.value=''; const kEl=document.getElementById('k-'+id); if(kEl)kEl.value='';
 }
 function fCustom(){ openForm({title:'Alimento non in lista',
@@ -1498,7 +1564,7 @@ function fCustom(){ openForm({title:'Alimento non in lista',
   onSubmit:(v)=>{ if(!v.f||!v.f.trim()){toast('Inserisci il nome');return false;} const k=parseInt(v.k); if(isNaN(k)){toast('Calorie non valide');return false;}
     S.foodLog=S.foodLog||[]; S.foodLog.push({meal:S._addMeal||'Pasto',f:v.f.trim(),k}); S.intake.kcal+=k; save(); rebuild('home'); toast('Aggiunto: '+v.f.trim()+' · '+k+' kcal'); go('diario'); } }); }
 function rmFood(i){ if(i<0||!S.foodLog||!S.foodLog[i])return; const it=S.foodLog[i]; S.intake.kcal=Math.max(0,S.intake.kcal-(it.k||0)); S.intake.prot=Math.max(0,S.intake.prot-(it.prot||0)); S.foodLog.splice(i,1); save(); rebuild('diario'); rebuild('home'); toast('Rimosso'); }
-function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); save(); }
+function logMeal(name,k,prot,meal){ S.foodLog=S.foodLog||[]; S.foodLog.push({meal:meal||'Pasto',f:name,k:k||0}); S.intake.kcal+=(k||0); S.intake.prot+=(prot||0); S._diaryCount=(S._diaryCount||0)+1; save(); }
 
 /* ---------- SCANNER ---------- */
 function scannerHTML(){
@@ -2637,6 +2703,8 @@ function profiloHTML(){
 
   <div class="card tight">
     <div class="row" onclick="go('percorso')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('sparkle',22)}</div><div class="rt"><b>Percorso Benessere</b><small>i tuoi traguardi, in una timeline</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('badge')" style="cursor:pointer"><div class="ri" style="background:#fff0e0;color:#c8781f">${ic('shield',22)}</div><div class="rt"><b>Badge & Livello</b><small>livello ${levelInfo().lvl} · ${(S.badges||[]).length} badge · ${xpTotal()} XP</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('sfide')" style="cursor:pointer"><div class="ri" style="background:var(--coral-s);color:var(--coral)">${ic('flame',22)}</div><div class="rt"><b>Sfide</b><small>partecipa e sblocca traguardi</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('storia')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📋</div><div class="rt"><b>Storia clinica</b><small>personalizza il piano</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--violet-s)">🎓</div><div class="rt"><b>${S.pro?'Il mio profilo professionista':'Diventa professionista'}</b><small>${S.pro?(S.pro.status==='verificato'?'verificato ✔️':'in verifica ⏳'):'nutrizionista, medico, PT…'}</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('cloud')" style="cursor:pointer"><div class="ri" style="background:#e8f1ff">☁️</div><div class="rt"><b>${loggedIn()?'Account cloud':'Attiva modalità reale'}</b><small>${loggedIn()?(cloudUser.email):'account veri + video reali'}</small></div><div class="rv">›</div></div>
@@ -3344,11 +3412,13 @@ async function saveDraft(){
 }
 async function publishEdited(){
   const cap=((document.getElementById('ed-cap')||{}).value||'').trim()||'Il mio short'; _editState.caption=cap;
+  S._everPosted=true; try{checkBadges(false);}catch(e){}
   if(cloudOn()&&loggedIn()){
     toast('Pubblicazione nel cloud…');
     try{ await cloudPublishEdit(_editState,_editFile); if(_editState.cloudId){ /* draft già rimossa */ } closeEditor(); go('community'); comTab('perte'); toast('Short pubblicato online! 🎬'); return; }
     catch(e){ toast('Errore cloud: '+(e.message||e)); }
   }
+  S._everPosted=true; try{checkBadges(true);}catch(e){}
   MYSHORTS.unshift({id:'my'+_editState.id,user:(S.user.name||'io'),me:true,src:_editSrc,caption:cap,type:_editState.type,overlays:_editState.overlays,music:_editState.music,voiceover:_editState.voiceover,muteOriginal:_editState.muteOriginal,isImage:_editState.isImage,flip:_editState.flip,diet:S.diet,goal:S.user.goal,likes:0,liked:false});
   DRAFTS=DRAFTS.filter(d=>d.id!==_editState.id);
   closeEditor(); go('community'); comTab('perte'); toast('Short pubblicato! 🎬');
@@ -4329,7 +4399,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -4354,7 +4424,7 @@ function afterRender(id){
   if(id==='clientchat'){renderChat();}
   if(id==='clientplans'){renderPlans();}
   if(id==='ricerca'){loadSearchData();}
-  if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); checkMilestones(false); save(); } }catch(e){} }
+  if(id==='home'||id==='score'){ try{ if(!isProMode()){ saveScoreToday(); checkMilestones(false); checkChallenges(); checkBadges(true); save(); } }catch(e){} }
 }
 function boot(){
   restore();
