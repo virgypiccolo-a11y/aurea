@@ -685,7 +685,8 @@ async function _deleteMyAccount(){
   try{ localStorage.removeItem('aurea_data'); }catch(e){}
   toast('Account e dati eliminati'); setTimeout(()=>location.reload(),800);
 }
-function preloadCloud(){ renderNav(); if(S.pro && S.pro.status==='in_verifica'){ setTimeout(verifyPro,600); } if(!cloudOn())return;
+function preloadCloud(){ renderNav(); if(!cloudOn())return;
+  try{ cloudLoadMyVerification().then(()=>{ renderNav(); if(curScreen==='pro')rebuild('pro'); }); }catch(e){}
   cloudLoadProducts().then(()=>{ _prodLoaded=true; if(curScreen==='home')rebuild('home'); if(curScreen==='shop')rebuild('shop'); });
   cloudLoadDocs().then(()=>{ _docsLoaded=true; if(curScreen==='prenota')renderDocs('Tutti'); });
   cloudRegisterDirectory();
@@ -4877,6 +4878,24 @@ const PROFS=[
   {v:"Fornitore autorizzato (vendita integratori)",ic:"📦",ente:"Fornitore autorizzato — azienda / P.IVA",albo:false}
 ];
 function profByName(v){return PROFS.find(p=>p.v===v)||PROFS[0];}
+/* ===== VERIFICA TITOLI / ALBI / P.IVA ===== */
+// Link ai registri ufficiali (per il controllo manuale dell'admin)
+const ALBO_LINKS={
+  'Ordine Nazionale dei Biologi (ONB)':'https://www.onb.it/albo/',
+  'Ordine dei Medici (OMCeO / FNOMCeO)':'https://portale.fnomceo.it/cerca-prof/',
+  'Ordine degli Psicologi (regionale)':'https://www.psy.it/cerca-un-professionista/'
+};
+function verRegisterLink(v){ const direct=ALBO_LINKS[v.ente]; if(direct)return direct; const q=encodeURIComponent(((v.ente||v.profession||'albo')+' '+(v.name||'')+' '+(v.albo_number||'')).trim()); return 'https://www.google.com/search?q='+q; }
+// Validazione P.IVA italiana (11 cifre + checksum)
+function isFornitoreProf(v){ return /fornitore/i.test(v||''); }
+function validaPIVA(p){ p=(''+p).replace(/[^0-9]/g,''); if(!/^[0-9]{11}$/.test(p))return false; let s=0; for(let i=0;i<11;i++){ let n=+p[i]; if(i%2===1){ n*=2; if(n>9)n-=9; } s+=n; } return s%10===0; }
+async function cloudCheckVAT(vat){ if(!cloudOn())return {valid:null}; try{ const {data,error}=await SB.functions.invoke('verify-vat',{body:{vat:vat,country:'IT'}}); if(error)throw error; return data||{valid:null}; }catch(e){ return {valid:null,error:(e&&e.message)||''}; } }
+async function cloudSubmitVerification(v){ if(!(cloudOn()&&loggedIn()))throw new Error('Accedi prima'); const {error}=await SB.from('verifications').insert(Object.assign({user_id:cloudUser.id,status:'in_review'},v)); if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "verifications": esegui lo script SQL della verifica.'); throw error; } }
+async function cloudLoadMyVerification(){ if(!(cloudOn()&&loggedIn())||!S.pro)return; try{ const {data,error}=await SB.from('verifications').select('*').eq('user_id',cloudUser.id).order('created_at',{ascending:false}).limit(1); if(error)throw error; const v=data&&data[0]; if(!v)return;
+  if(v.status==='approved'){ S.pro.status='verificato'; }
+  else if(v.status==='rejected'){ S.pro.status='rifiutato'; S.pro.verNote=v.note||''; }
+  else { S.pro.status='in_verifica'; }
+  try{save();}catch(e){} }catch(e){} }
 const ITA_UNI={
   "Abruzzo":["Università di L'Aquila","Università di Chieti-Pescara \"G. d'Annunzio\"","Università di Teramo"],
   "Basilicata":["Università della Basilicata"],
@@ -4921,6 +4940,7 @@ function proHTML(){
     <div class="field"><label>Regione in cui ti sei laureato</label><select id="pro-reg" onchange="proUniUpdate()"><option value="">— seleziona —</option>${REGIONS.map(r=>`<option>${r}</option>`).join('')}</select></div>
     <div class="grid2"><div class="field"><label>Università</label><select id="pro-uni"><option>Scegli prima la regione</option></select></div><div class="field"><label>Anno di laurea</label><input id="pro-year" type="number" inputmode="numeric" placeholder="es. 2016"></div></div>
     <div class="field"><label>Ente / Albo di riferimento</label><input id="pro-ente" readonly value="${first.ente}"></div>
+    <div class="field" id="pro-vat-wrap" style="display:none"><label>Partita IVA (11 cifre)</label><input id="pro-vat" inputmode="numeric" placeholder="es. 01234567890" oninput="proVatCheck()"><div id="pro-vat-msg" class="tiny" style="text-align:left;margin-top:4px"></div></div>
     <div class="field"><label id="pro-albo-lbl">N. iscrizione albo</label><input id="pro-albo" inputmode="numeric" placeholder="es. 123456"></div>
     <div class="field"><label>Tariffa a visita</label><input id="pro-price" placeholder="es. €60"></div>
     <div class="field"><label>Presentazione (bio)</label><textarea id="pro-bio" rows="2" style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:none" placeholder="Esperienza, specializzazioni..."></textarea></div>
@@ -4944,9 +4964,11 @@ let _proCert=null;
 function proEnteUpdate(){const v=document.getElementById('pro-prof').value;const p=profByName(v);document.getElementById('pro-ente').value=p.ente;const al=document.getElementById('pro-albo');const lbl=document.getElementById('pro-albo-lbl');if(p.albo){al.disabled=false;al.placeholder='es. 123456';lbl.textContent='N. iscrizione albo (obbligatorio)';}else{al.disabled=false;al.placeholder='se disponibile';lbl.textContent='N. iscrizione / matricola (facoltativo)';}
   // per il Fornitore i campi diventano aziendali
   const isForn=/fornitore/i.test(v); const tl=document.getElementById('pro-title-lbl'); const ti=document.getElementById('pro-title');
-  if(tl){ tl.textContent=isForn?'Ragione sociale / P.IVA':'Titolo di studio'; }
-  if(ti){ ti.placeholder=isForn?'es. Nutraceutici SRL · P.IVA 01234567890':'es. Laurea Magistrale in Biologia della Nutrizione'; }
-  const albLbl=document.getElementById('pro-albo-lbl'); if(albLbl&&isForn){ albLbl.textContent='N. REA / registro imprese (facoltativo)'; }}
+  if(tl){ tl.textContent=isForn?'Ragione sociale':'Titolo di studio'; }
+  if(ti){ ti.placeholder=isForn?'es. Nutraceutici SRL':'es. Laurea Magistrale in Biologia della Nutrizione'; }
+  const vw=document.getElementById('pro-vat-wrap'); if(vw)vw.style.display=isForn?'block':'none';
+  const albLbl=document.getElementById('pro-albo-lbl'); if(albLbl){ albLbl.textContent=isForn?'N. REA / registro imprese (facoltativo)':(profByName(v).albo?'N. iscrizione albo (obbligatorio)':'N. iscrizione / matricola (facoltativo)'); }}
+function proVatCheck(){ const el=document.getElementById('pro-vat'); const m=document.getElementById('pro-vat-msg'); if(!el||!m)return; const p=(el.value||'').replace(/[^0-9]/g,''); if(p.length<11){ m.textContent=''; m.style.color=''; return; } if(validaPIVA(p)){ m.textContent='✓ Formato P.IVA valido — verrà confermata su VIES all\'invio'; m.style.color='var(--green-d)'; } else { m.textContent='✕ P.IVA non valida (checksum errato)'; m.style.color='var(--coral)'; } }
 function uploadCert(){capturePhoto(setCert,'Inquadra il titolo / certificato');}
 function setCert(url,file){_proCert=url;const el=document.getElementById('pro-cert-status');if(!el)return;
   const isPdf=(url||'').startsWith('data:application/pdf')||(file&&/pdf$/i.test(file.name||''));
@@ -4962,25 +4984,33 @@ function submitPro(){
   const reg=(document.getElementById('pro-reg').value||'').trim();
   const price=(document.getElementById('pro-price').value||'').trim()||'€—';
   const bio=(document.getElementById('pro-bio').value||'').trim();
-  if(!name||!title){toast('Inserisci nome e titolo di studio');return;}
-  if(!_proCert){toast('Carica il certificato/titolo');return;}
+  const isForn=isFornitoreProf(prof);
+  const vat=(document.getElementById('pro-vat')?document.getElementById('pro-vat').value:'').replace(/[^0-9]/g,'');
+  if(!name||!title){toast(isForn?'Inserisci ragione sociale e nome':'Inserisci nome e titolo di studio');return;}
+  if(!_proCert){toast(isForn?'Carica la visura / documento aziendale':'Carica il certificato/titolo');return;}
   if(p.albo && !/^[0-9]{4,}$/.test(albo)){toast('Numero d\'albo non valido (min 4 cifre)');return;}
+  if(isForn){ if(!validaPIVA(vat)){toast('Partita IVA non valida (11 cifre + checksum)');return;} }
   const disc=document.getElementById('pro-disclaimer');
   if(!disc||!disc.checked){toast('Devi accettare la dichiarazione di responsabilità');return;}
-  S.pro={profession:prof,ic:p.ic,ente:p.ente,name,title,uni,year,albo,reg,price:price.startsWith('€')?price:'€'+price,bio,cert:_proCert,followers:0,status:'in_verifica',submitted:true,avail:[],disclaimerAccepted:true,disclaimerAt:new Date().toISOString()};
-  save(); renderNav(); rebuild('pro'); go('pro');
-  toast('Inviato! Verifica dei titoli in corso…');
-  setTimeout(verifyPro,2600);
+  if(!(cloudOn()&&loggedIn())){toast('Attiva il tuo account (cloud) per inviare la verifica');go('cloud');return;}
+  submitProCloud({prof,p,name,title,uni,year,albo,reg,price,bio,isForn,vat});
 }
-function verifyPro(){
-  if(!S.pro||S.pro.status!=='in_verifica')return;
-  const p=profByName(S.pro.profession);
-  const alboOk = !p.albo || /^[0-9]{4,}$/.test(S.pro.albo||'');
-  const complete = S.pro.name && S.pro.title && S.pro.cert;
-  if(alboOk && complete){ S.pro.status='verificato'; S.pro.verifiedAt='oggi'; }
-  else { S.pro.status='manuale'; }
-  save(); renderNav(); rebuild('home'); if(curScreen==='pro'){rebuild('pro');go('pro');} rebuild('prenota');
-  toast(S.pro.status==='verificato'?'Titoli verificati ✔️ Ora sei attivo!':'Servono documenti aggiuntivi');
+async function submitProCloud(f){
+  toast('Invio in corso…');
+  try{
+    // 1) carico il documento (certificato o visura)
+    let docUrl=f.p&&false; try{ docUrl = (typeof _proCert==='string'&&_proCert.startsWith('http'))?_proCert:await dataUrlToUrl(_proCert,(f.isForn?'visura':'titolo')+'.jpg'); }catch(e){ docUrl=null; }
+    // 2) fornitore: verifica P.IVA su VIES
+    let vat_valid=null, vat_name='';
+    if(f.isForn){ const r=await cloudCheckVAT(f.vat); vat_valid=(r&&typeof r.valid==='boolean')?r.valid:null; vat_name=(r&&r.name)||''; if(vat_valid===false){ toast('La P.IVA risulta NON valida su VIES. Controlla il numero.'); return; } }
+    // 3) salvo il profilo pro (in verifica)
+    S.pro={profession:f.prof,ic:f.p.ic,ente:f.p.ente,name:f.name,title:f.title,uni:f.uni,year:f.year,albo:f.albo,reg:f.reg,vat:f.vat||'',price:f.price.startsWith('€')?f.price:'€'+f.price,bio:f.bio,cert:_proCert,doc_url:docUrl,followers:0,status:'in_verifica',submitted:true,avail:[],disclaimerAccepted:true,disclaimerAt:new Date().toISOString()};
+    save(); try{await cloudSaveProfile();}catch(e){}
+    // 4) invio la richiesta di verifica all'admin
+    await cloudSubmitVerification({ kind:f.isForn?'fornitore':'pro', name:f.name, profession:f.prof, ente:f.p.ente, albo_number:f.albo||'', region:f.reg||'', vat:f.vat||'', vat_valid:vat_valid, vat_name:vat_name, doc_url:docUrl });
+    renderNav(); rebuild('pro'); go('pro');
+    toast('Inviata! Un amministratore verificherà i tuoi documenti.');
+  }catch(e){ toast('Invio non riuscito: '+((e&&e.message)||e)); }
 }
 /* ============ TERMINI E RESPONSABILITÀ ============ */
 function terminiHTML(){
@@ -5048,13 +5078,33 @@ function adminHTML(){
   return `<button class="back" onclick="go('profilo')">← Profilo</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Solo tu vedi questa sezione</div><div class="n">🛠️ Admin</div></div></div>
   <div class="alert info"><span>👑</span><div>Gestisci professionisti e prodotti reali della piattaforma. Le modifiche valgono per tutti gli utenti.</div></div>
+  <div class="card"><div class="h">🪪 Verifiche in attesa</div><div class="sub" style="margin-bottom:8px">Controlla documento e numero d'iscrizione sul registro ufficiale, poi approva o rifiuta.</div><div id="admin-ver"><div class="sub">Caricamento…</div></div></div>
   <div class="card"><div class="h">🩺 Professionisti</div><div id="admin-pros"><div class="sub">Caricamento…</div></div></div>
   <div class="card"><div class="h">🛍️ Prodotti in vendita</div><div id="admin-prods"><div class="sub">Caricamento…</div></div>
     <button class="btn sec sm" style="margin-top:10px" onclick="adminAddProduct()">＋ Aggiungi prodotto</button>
   </div>`;
 }
+async function cloudLoadVerifications(){ if(!cloudOn())return []; try{ const {data,error}=await SB.from('verifications').select('*').order('created_at',{ascending:false}).limit(100); if(error)throw error; return data||[]; }catch(e){ return []; } }
+function verAdminCard(v){ const vies=v.kind==='fornitore'
+    ?`<div class="sub">P.IVA: <b>${(v.vat||'—')}</b> · VIES: ${v.vat_valid===true?('<b style="color:var(--green-d)">valida ✓</b>'+(v.vat_name?(' · '+String(v.vat_name).replace(/</g,'&lt;')):'')):(v.vat_valid===false?'<b style="color:var(--coral)">non valida ✕</b>':'non verificata')}</div>`
+    :`<div class="sub">Albo: <b>${(v.ente||'—').replace(/</g,'&lt;')}</b> · n. <b>${v.albo_number||'—'}</b> · ${v.region||'—'}</div>`;
+  return `<div class="card tight" style="border:1px solid var(--line);box-shadow:none;margin-bottom:10px">
+    <div class="row" style="padding:0"><div class="ri" style="background:var(--mint)">${v.kind==='fornitore'?'📦':'🎓'}</div><div class="rt" style="flex:1"><b>${(v.name||'—').replace(/</g,'&lt;')}</b><small>${(v.profession||'').replace(/</g,'&lt;')}</small></div></div>
+    ${vies}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      ${v.doc_url?`<a class="btn sm sec" style="width:auto;padding:7px 12px;text-decoration:none" href="${v.doc_url}" target="_blank" rel="noopener">📄 Documento</a>`:'<span class="tiny" style="align-self:center">Nessun documento</span>'}
+      <a class="btn sm sec" style="width:auto;padding:7px 12px;text-decoration:none" href="${verRegisterLink(v)}" target="_blank" rel="noopener">🔎 Registro ufficiale</a>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn sm" style="flex:1;padding:8px" onclick="adminApproveVer(${v.id},'${v.user_id}')">✔️ Approva</button>
+      <button class="btn sm" style="flex:1;padding:8px;background:var(--coral);box-shadow:none" onclick="adminRejectVer(${v.id})">✕ Rifiuta</button>
+    </div>
+  </div>`; }
+async function adminApproveVer(id,userId){ try{ await SB.from('verifications').update({status:'approved',updated_at:new Date().toISOString()}).eq('id',id); if(userId&&userId!=='null'){ try{await SB.from('pros').update({status:'verificato'}).eq('id',userId);}catch(e){} try{await SB.from('profiles').update({pro_status:'verificato'}).eq('id',userId);}catch(e){} } toast('Verifica approvata ✔️'); _docsLoaded=false; renderAdmin(); }catch(e){ toast('Errore: '+((e&&e.message)||e)); } }
+function adminRejectVer(id){ openForm({title:'Rifiuta verifica',subtitle:'Il motivo verrà mostrato al professionista',fields:[{id:'note',label:'Motivo del rifiuto',type:'textarea',ph:'es. numero d\'albo non trovato nel registro ufficiale'}],submit:'Rifiuta',onSubmit:async(v)=>{ try{ await SB.from('verifications').update({status:'rejected',note:(v.note||'').trim(),updated_at:new Date().toISOString()}).eq('id',id); toast('Verifica rifiutata'); renderAdmin(); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }
 function renderAdmin(){
   if(!isAdmin())return;
+  cloudLoadVerifications().then(rows=>{ const c=document.getElementById('admin-ver'); if(!c)return; const pend=rows.filter(r=>r.status==='in_review'); c.innerHTML=pend.length?pend.map(verAdminCard).join(''):'<div class="sub">Nessuna verifica in attesa. 🎉</div>'; });
   cloudLoadAllPros().then(rows=>{ ADMIN_PROS=rows; const c=document.getElementById('admin-pros'); if(!c)return;
     c.innerHTML=rows.length?rows.map(r=>`<div class="row" style="flex-wrap:wrap">
       <div class="ri" style="background:var(--mint)">${r.ic||'👤'}</div>
@@ -5135,7 +5185,7 @@ function proDelTime(di,ti){ S.pro.avail[di].times.splice(ti,1); save(); renderPr
 function proStatusHTML(){
   const s=S.pro; const rev=docReviews(s.name);
   const avg=rev.length?(rev.reduce((a,b)=>a+b.stars,0)/rev.length):null;
-  const badge={in_verifica:['⏳ In verifica','#8a5a08','#fff4e0'],verificato:['✔️ Verificato','var(--green-d)','var(--mint)'],manuale:['📄 Documenti richiesti','#245a9e','#e8f1ff']}[s.status];
+  const badge=({in_verifica:['⏳ In verifica','#8a5a08','#fff4e0'],verificato:['✔️ Verificato','var(--green-d)','var(--mint)'],manuale:['📄 Documenti richiesti','#245a9e','#e8f1ff'],rifiutato:['✕ Non approvato','var(--coral)','var(--coral-s)']})[s.status]||['⏳ In verifica','#8a5a08','#fff4e0'];
   return `<button class="back" onclick="go('profilo')">← Profilo</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Il tuo profilo pro</div><div class="n">🎓 ${s.profession}</div></div></div>
 
@@ -5151,9 +5201,9 @@ function proStatusHTML(){
     </div>
   </div>
 
-  ${s.status==='in_verifica'?`<div class="card"><div class="h">🔎 Verifica in corso</div><div class="sub">Stiamo controllando i tuoi titoli e l'iscrizione a <b>${s.ente}</b>. Di solito richiede poco. Ti avviseremo appena sei attivo.</div><div class="bar" style="height:8px;margin-top:12px"><i style="width:60%;background:var(--amber)"></i></div></div>`:''}
+  ${s.status==='in_verifica'?`<div class="card"><div class="h">🔎 Verifica in corso</div><div class="sub">Un amministratore sta controllando i tuoi documenti e l'iscrizione a <b>${s.ente}</b> sul registro ufficiale. Riceverai l'esito qui. Finché non sei approvato non compari tra i professionisti.</div><div class="bar" style="height:8px;margin-top:12px"><i style="width:55%;background:var(--amber)"></i></div></div>`:''}
   ${s.status==='verificato'?`<div class="alert ok"><span>🎉</span><div><b>Sei verificato e attivo!</b> Compari tra i professionisti in "Prenota", gli utenti possono seguirti, prenotarti e lasciarti recensioni.</div></div>`:''}
-  ${s.status==='manuale'?`<div class="alert info"><span>📄</span><div>Non abbiamo potuto confermare automaticamente. Ricontrolla il numero d'albo e ricarica un documento leggibile, poi reinvia.</div></div>`:''}
+  ${(s.status==='rifiutato'||s.status==='manuale')?`<div class="alert info" style="background:var(--coral-s)"><span>📄</span><div><b>Verifica non approvata.</b>${s.verNote?' Motivo: '+String(s.verNote).replace(/</g,'&lt;'):' Ricontrolla i documenti e il numero d\'albo.'}<br><button class="btn sm sec" style="margin-top:8px" onclick="S.pro=null;save();rebuild('pro');go('pro')">Ricompila e reinvia</button></div></div>`:''}
 
   <div class="card">
     <div class="h">🎓 Credenziali</div>
@@ -5417,8 +5467,6 @@ function boot(){
   Object.keys(BUILDERS).forEach(afterRender);
   go('home');
   save();
-  // se è rimasto un professionista "in verifica" (verifica auto interrotta), completala
-  if(S.pro && S.pro.status==='in_verifica'){ setTimeout(verifyPro,600); }
   if(S.stepsConnected){ try{ startPedometer(); }catch(e){} }
   try{ if(healthBridge()&&S.healthConnected)syncHealth(true); }catch(e){}
   // La PRIMA schermata è sempre login/registrazione, finché non si è loggati
