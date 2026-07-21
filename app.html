@@ -237,6 +237,8 @@ body{
 .field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:12px 13px;font-size:14px;outline:none;font-family:inherit;background:var(--card)}
 .seg{display:flex;background:var(--line);border-radius:14px;padding:4px;gap:4px}
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:11px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer}
+.fbtn{background:none;border:none;display:flex;align-items:center;gap:5px;font-weight:700;color:var(--ink);cursor:pointer;font-size:13px;padding:0}
+.notifdot{position:absolute;top:-3px;right:-3px;background:var(--coral);color:#fff;font-size:10px;font-weight:800;min-width:17px;height:17px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 
 /* bottom nav */
@@ -562,7 +564,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','nutriplan','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge','ricette','salute','dirette'];
+const REFRESH_ON_SHOW=['home','piano','nutriplan','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge','ricette','salute','dirette','community','notifiche'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -723,7 +725,7 @@ async function cloudLoadFollowing(){ if(!cloudOn()||!cloudUser)return; try{ cons
 function isFollowingId(uid){ return FOLLOWING.has(uid); }
 async function cloudToggleFollow(uid){ if(!(cloudOn()&&loggedIn())){toast('Accedi per seguire');return false;} if(!uid||uid===cloudUser.id){return false;}
   try{ if(FOLLOWING.has(uid)){ await SB.from('follows').delete().eq('follower_id',cloudUser.id).eq('following_id',uid); FOLLOWING.delete(uid); return false; }
-    else { await SB.from('follows').insert({follower_id:cloudUser.id,following_id:uid}); FOLLOWING.add(uid); return true; } }catch(e){ toast('Errore: '+(e.message||e)); return FOLLOWING.has(uid); } }
+    else { await SB.from('follows').insert({follower_id:cloudUser.id,following_id:uid}); FOLLOWING.add(uid); try{cloudNotify(uid,'follow',{});}catch(e){} return true; } }catch(e){ toast('Errore: '+(e.message||e)); return FOLLOWING.has(uid); } }
 async function cloudLoadSaves(){ if(!cloudOn()||!cloudUser)return; try{ const {data}=await SB.from('saves').select('post_id').eq('user_id',cloudUser.id); SAVED=new Set((data||[]).map(r=>String(r.post_id))); }catch(e){} }
 function isSaved(pid){ return SAVED.has(String(pid)); }
 async function cloudToggleSave(pid){ if(!(cloudOn()&&loggedIn())){toast('Accedi per salvare');return false;}
@@ -1010,6 +1012,7 @@ const ICONS={
  bag:'<path d="M6.5 8h11l-1 11.5H7.5z"/><path d="M9.2 8V6.4a2.8 2.8 0 0 1 5.6 0V8"/>',
  dumbbell:'<path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/>',
  bell:'<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.8 1.8H4.2z"/><path d="M10 20.2a2 2 0 0 0 4 0"/>',
+ chat:'<path d="M4 5.5h16v10H9l-4 3.5v-3.5H4z"/><path d="M8 9.5h8M8 12.5h5"/>',
  drop:'<path d="M12 3.5s6 6.3 6 10.2a6 6 0 0 1-12 0C6 9.8 12 3.5 12 3.5z"/>',
  steps:'<path d="M7.5 4.5c1.4 0 2.3 1.4 2.3 3.4S9 14 7.5 14 5.2 12 5.2 9.5 6.1 4.5 7.5 4.5z"/><path d="M16.5 10c1.4 0 2.3 1.4 2.3 3.4S18 19.5 16.5 19.5 14.2 17.5 14.2 15 15.1 10 16.5 10z"/>',
  moon:'<path d="M20 14.6A8 8 0 1 1 9.4 4 6.5 6.5 0 0 0 20 14.6z"/>',
@@ -1124,6 +1127,8 @@ const MENU=[
   {id:'allenamento',icn:'dumbbell',l:'Allenamenti'},
   {id:'ricette',icn:'bowl',l:'Ricette'},
   {id:'community',icn:'users',l:'Community'},
+  {id:'clientchat',icn:'chat',l:'Messaggi',usr:true},
+  {id:'notifiche',icn:'bell',l:'Notifiche',usr:true},
   {id:'ricerca',icn:'grid',l:'Ricerca'},
   {id:'shop',icn:'bag',l:'Integratori'},
   {id:'carrello',icn:'cart',l:'Carrello'},
@@ -2679,7 +2684,8 @@ async function cloudSendMessage(o){ const row={from_id:cloudUser.id,from_name:((
   if(o.attachment){ row.attachment=o.attachment; row.attach_type=o.attachType||'file'; }
   let {error}=await SB.from('messages').insert(row);
   if(error&&/column|schema cache|could not find/i.test(error.message||'')){ delete row.attachment; delete row.attach_type; const r2=await SB.from('messages').insert(row); error=r2.error; }
-  if(error)throw error; }
+  if(error)throw error;
+  if(o.toId&&!o.groupId){ try{cloudNotify(o.toId,'message',{text:o.text||''});}catch(e){} } }
 async function cloudCreateGroup(name,emails){ const row={name:name,owner_id:cloudUser.id,members:emails}; const {data,error}=await SB.from('chat_groups').insert(row).select().single(); if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "chat_groups": esegui lo script SQL della chat.'); throw error; } return data; }
 async function cloudDeleteGroup(id){ if(!cloudOn())return {error:new Error('offline')}; try{ return await SB.from('chat_groups').delete().eq('id',id); }catch(e){ return {error:e}; } }
 function chatThreads(){ const map={}; CHAT_MSGS.forEach(m=>{ if(m.group_id)return; const meFrom=m.from_id===cloudUser.id; const other=meFrom?m.to_id:m.from_id; if(!other)return; const oname=meFrom?(m.to_name||'Cliente'):(m.from_name||'Cliente'); if(!map[other])map[other]={id:other,name:oname}; if(!meFrom)map[other].name=m.from_name||map[other].name; map[other].last=m.text||(m.attachment?'📎 Allegato':''); }); return Object.values(map); }
@@ -2993,18 +2999,38 @@ function ntBuildSlot(items,slotKcal){
   out.forEach(o=>{ o.g=Math.max(5,Math.round(o.g*sc/5)*5); o.kcal=Math.round(o.k100*o.g/100); kc+=o.kcal; });
   return {items:out,kcal:kc};
 }
+// kg a settimana per ogni ritmo (deficit se dimagrire, surplus se aumentare)
+const NT_PACE={
+  Dimagrire:{'Lento e sostenibile':0.25,'Moderato':0.5,'Deciso':0.75,'Veloce':1.0},
+  Aumentare:{'Lento e sostenibile':0.12,'Moderato':0.25,'Deciso':0.4,'Veloce':0.5}
+};
 function ntPlan(){
   const d=S.nutri||{}; const w=+d.w,h=+d.h,age=+d.age;
   const bmr=10*w+6.25*h-5*age+(d.sex==='M'?5:-161);
   const tdee=bmr*(NT_ACT[d.act]||1.375);
-  const adj=NT_GOAL[d.goal]!=null?NT_GOAL[d.goal]:0;
-  let kcal=Math.round(tdee*(1+adj)/10)*10;
-  const floor=d.sex==='M'?1500:1200; if(kcal<floor)kcal=floor;
+  let kcal=tdee, rate=0, delta=0;
+  if(d.goal==='Dimagrire'||d.goal==='Aumentare'){
+    const isLoss=d.goal==='Dimagrire';
+    const table=NT_PACE[d.goal]||{}; rate=(table[d.pace]!=null)?table[d.pace]:(isLoss?0.5:0.25);
+    delta=rate*7700/7;                    // kcal/giorno teoriche (1 kg grasso ≈ 7700 kcal)
+    const cap=(isLoss?0.28:0.20)*tdee;     // tetto di sostenibilità sul fabbisogno
+    if(delta>cap)delta=cap;
+    kcal=isLoss?(tdee-delta):(tdee+delta);
+  }
+  kcal=Math.round(kcal/10)*10;
+  const floor=d.sex==='M'?1500:1200; if(kcal<floor)kcal=floor;   // mai sotto la soglia di sicurezza
+  const signed=Math.round(kcal-tdee);                            // <0 deficit, >0 surplus
+  const effRate=Math.round(Math.abs(signed)*7/7700*100)/100;     // kg/settimana reali dopo i limiti
   const pKg=d.goal==='Dimagrire'?2.0:(d.goal==='Aumentare'?1.8:1.6);
   const prot=Math.round(pKg*w);
   const fat=Math.round(kcal*0.25/9);
   let carb=Math.round((kcal-prot*4-fat*9)/4); if(carb<0)carb=0;
-  return {bmr:Math.round(bmr),tdee:Math.round(tdee),kcal,prot,fat,carb};
+  return {bmr:Math.round(bmr),tdee:Math.round(tdee),kcal,prot,fat,carb,signed,effRate};
+}
+function ntGoalLine(p,d){
+  if(d.goal==='Dimagrire') return `📉 Deficit di ~${Math.abs(p.signed)} kcal/giorno · circa ${p.effRate.toString().replace('.',',')} kg a settimana`;
+  if(d.goal==='Aumentare') return `📈 Surplus di ~${p.signed} kcal/giorno · circa ${p.effRate.toString().replace('.',',')} kg a settimana`;
+  return `⚖️ Mantenimento · nessun deficit, resti intorno al tuo fabbisogno`;
 }
 function ntDay(kcal){
   const d=S.nutri||{}; const diet=d.diet||'onnivoro'; const v=d.variant||0;
@@ -3030,7 +3056,8 @@ function nutriplanHTML(){
   const soft='background:var(--soft);border-radius:12px;padding:10px 4px';
   return `<button class="back" onclick="go('home')">← Home</button>
    <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Obiettivo: ${d.goal}</div><div class="n">${ic('piano',22)} Piano nutrizionale</div></div></div>
-   <div class="banner gg"><span class="b-ic">🥗</span><h4>${p.kcal.toLocaleString('it-IT')} kcal al giorno</h4><p>${d.dietLbl||'Onnivoro'}${(d.exclude&&d.exclude.length)?' · senza '+d.exclude.join(', '):''} · metabolismo basale ~${p.bmr.toLocaleString('it-IT')} kcal</p></div>
+   <div class="banner gg"><span class="b-ic">🥗</span><h4>${p.kcal.toLocaleString('it-IT')} kcal al giorno</h4><p>${ntGoalLine(p,d)}</p></div>
+   <div class="card" style="padding:12px 14px;margin-bottom:12px"><div style="font-size:13px;line-height:1.7;color:var(--ink)">Fabbisogno di mantenimento: <b>~${p.tdee.toLocaleString('it-IT')} kcal</b><br>Regime: <b>${d.dietLbl||'Onnivoro'}</b>${(d.exclude&&d.exclude.length)?` · senza <b>${d.exclude.join(', ')}</b>`:''}${(d.goal!=='Mantenere')?`<br>Ritmo: <b>${d.pace||'Moderato'}</b>`:''}</div></div>
    <div class="section-title" style="margin-top:2px">I tuoi macro giornalieri</div>
    <div class="row" style="gap:8px;text-align:center;margin-bottom:4px">
      <div style="flex:1;${soft}"><div style="font-weight:800;font-size:17px">${p.prot} g</div><div style="font-size:10px;color:var(--muted)">proteine</div></div>
@@ -3055,15 +3082,16 @@ function openNutriForm(){
     {id:'w',label:'Peso (kg)',type:'number',value:d.w||''},
     {id:'act',label:'Livello di attività',type:'select',options:Object.keys(NT_ACT),value:d.act||'Moderato (3-4 allenamenti/sett)'},
     {id:'goal',label:'Obiettivo',type:'select',options:['Dimagrire','Mantenere','Aumentare'],value:d.goal||'Mantenere'},
+    {id:'pace',label:'Ritmo (se dimagrisci o aumenti)',type:'select',options:['Lento e sostenibile','Moderato','Deciso','Veloce'],value:d.pace||'Moderato'},
     {id:'diet',label:'Regime alimentare',type:'select',options:['Onnivoro','Vegetariano','Vegano'],value:d.dietLbl||'Onnivoro'},
-    {id:'exclude',label:'Alimenti da escludere (facoltativo)',type:'textarea',ph:'es. pesce, lattosio, glutine',value:(d.exclude||[]).join(', ')}
+    {id:'exclude',label:'Alimenti che non ti piacciono o da escludere',type:'textarea',ph:'es. pesce, lattosio, funghi, glutine — il menù si adatta',value:(d.exclude||[]).join(', ')}
    ],submit:'Genera il piano',
    onSubmit:(v)=>{
      const age=parseInt(v.age),h=parseFloat(v.h),w=parseFloat(v.w);
      if(!age||age<12||age>100){toast('Età non valida');return false;}
      if(!h||h<120||h>230){toast('Altezza non valida (cm)');return false;}
      if(!w||w<30||w>300){toast('Peso non valido (kg)');return false;}
-     S.nutri={ sex:v.sex==='Uomo'?'M':'F', age,h,w, act:v.act, goal:v.goal,
+     S.nutri={ sex:v.sex==='Uomo'?'M':'F', age,h,w, act:v.act, goal:v.goal, pace:v.pace||'Moderato',
        dietLbl:v.diet, diet:(v.diet||'Onnivoro').toLowerCase(),
        exclude:(v.exclude||'').split(',').map(s=>s.trim()).filter(Boolean),
        variant:(S.nutri&&S.nutri.variant)||0 };
@@ -3697,18 +3725,103 @@ function runSearch(){
   }
   el.innerHTML=html||`<div class="card" style="text-align:center"><div class="sub">Nessun risultato per "${_searchQ}". ${cloudOn()?'':'Attiva la modalità reale per cercare tra i contenuti.'}</div></div>`;
 }
+/* ===== SOCIAL: like per-utente, notifiche, feed testuale stile Instagram ===== */
+function timeAgo(ts){ if(!ts)return''; const d=new Date(ts).getTime(); if(isNaN(d))return''; const s=Math.floor((Date.now()-d)/1000);
+  if(s<60)return'ora'; const m=Math.floor(s/60); if(m<60)return m+' min fa'; const h=Math.floor(m/60); if(h<24)return h+' h fa'; const g=Math.floor(h/24); if(g<7)return g+' g fa'; return fmtDateIt(new Date(d).toISOString().slice(0,10)); }
+let LIKED=new Set(), LIKE_COUNTS={};
+async function cloudLoadLikes(ids){ if(!cloudOn()||!cloudUser||!ids||!ids.length)return; try{ const {data}=await SB.from('post_likes').select('post_id,user_id').in('post_id',ids); LIKE_COUNTS={}; LIKED=new Set(); (data||[]).forEach(r=>{ LIKE_COUNTS[r.post_id]=(LIKE_COUNTS[r.post_id]||0)+1; if(r.user_id===cloudUser.id)LIKED.add(String(r.post_id)); }); }catch(e){} }
+function isLiked(pid){ return LIKED.has(String(pid)); }
+async function cloudToggleLike(pid,ownerId){ if(!(cloudOn()&&loggedIn())){toast('Accedi per mettere mi piace');return false;} const k=String(pid);
+  try{ if(LIKED.has(k)){ await SB.from('post_likes').delete().eq('post_id',pid).eq('user_id',cloudUser.id); LIKED.delete(k); LIKE_COUNTS[pid]=Math.max(0,(LIKE_COUNTS[pid]||1)-1); try{SB.from('posts').update({likes:LIKE_COUNTS[pid]}).eq('id',pid);}catch(e){} return false; }
+    else { const {error}=await SB.from('post_likes').insert({post_id:pid,user_id:cloudUser.id}); if(error&&!/duplicate/i.test(error.message||''))throw error; LIKED.add(k); LIKE_COUNTS[pid]=(LIKE_COUNTS[pid]||0)+1; try{SB.from('posts').update({likes:LIKE_COUNTS[pid]}).eq('id',pid);}catch(e){} if(ownerId&&ownerId!==cloudUser.id)cloudNotify(ownerId,'like',{post_id:pid}); return true; } }
+  catch(e){ toast('Errore: '+(e.message||e)); return LIKED.has(k); } }
+/* --- Notifiche --- */
+let NOTIFS=[], NOTIF_UNREAD=0;
+async function cloudNotify(userId,type,extra){ if(!cloudOn()||!cloudUser||!userId||userId===cloudUser.id)return; extra=extra||{};
+  try{ await SB.from('notifications').insert({user_id:userId,actor_id:cloudUser.id,actor_name:((S.pro&&S.pro.name)||S.user.name||'utente'),type:type,post_id:extra.post_id||null,text:extra.text||''}); }catch(e){} }
+async function cloudLoadNotifs(){ if(!cloudOn()||!cloudUser){NOTIFS=[];NOTIF_UNREAD=0;return [];} try{ const {data,error}=await SB.from('notifications').select('*').eq('user_id',cloudUser.id).order('created_at',{ascending:false}).limit(60); if(error)throw error; NOTIFS=data||[]; NOTIF_UNREAD=NOTIFS.filter(n=>!n.read).length; return NOTIFS; }catch(e){ return NOTIFS; } }
+async function cloudMarkNotifsRead(){ if(!cloudOn()||!cloudUser||!NOTIF_UNREAD)return; try{ await SB.from('notifications').update({read:true}).eq('user_id',cloudUser.id).eq('read',false); NOTIFS.forEach(n=>n.read=true); NOTIF_UNREAD=0; }catch(e){} }
+function updateNotifBadge(){ if(!(cloudOn()&&loggedIn()))return; cloudLoadNotifs().then(()=>{ document.querySelectorAll('.notif-badge').forEach(b=>{ b.style.display=NOTIF_UNREAD?'flex':'none'; b.textContent=NOTIF_UNREAD>9?'9+':NOTIF_UNREAD; }); }); }
+function notifIcon(t){ return t==='like'?'❤️':t==='comment'?'💬':t==='follow'?'👤':'✉️'; }
+function notifText(n){ const a=`<b>${(n.actor_name||'Qualcuno').replace(/</g,'&lt;')}</b>`;
+  if(n.type==='like')return `${a} ha messo mi piace al tuo post`;
+  if(n.type==='comment')return `${a} ha commentato: "${(n.text||'').replace(/</g,'&lt;').slice(0,60)}"`;
+  if(n.type==='follow')return `${a} ha iniziato a seguirti`;
+  if(n.type==='message')return `${a} ti ha inviato un messaggio`;
+  return a; }
+function notificheHTML(){
+  if(!(cloudOn()&&loggedIn())) return `<button class="back" onclick="go('home')">← Home</button><div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Attività</div><div class="n">🔔 Notifiche</div></div></div><div class="card" style="text-align:center"><div class="sub">Accedi per vedere le notifiche.</div></div>`;
+  return `<button class="back" onclick="go('home')">← Home</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Attività recente</div><div class="n">🔔 Notifiche</div></div></div>
+  <div id="notif-list"><div class="card"><div class="sub">Caricamento…</div></div></div>`;
+}
+function renderNotifs(){ const c=document.getElementById('notif-list'); if(!c)return;
+  cloudLoadNotifs().then(list=>{
+    c.innerHTML=list.length?list.map(n=>`<div class="row" style="padding:11px 8px;margin-bottom:4px;${n.read?'':'background:var(--mint);border-radius:13px'}"${n.type==='message'?` onclick="go('clientchat')" style="cursor:pointer"`:(n.post_id?` onclick="go('community')" style="cursor:pointer"`:'')}>
+        <div class="ri" style="background:var(--soft)">${notifIcon(n.type)}</div>
+        <div class="rt" style="flex:1"><small style="white-space:normal;color:var(--ink);font-size:13px">${notifText(n)}</small><small style="color:var(--muted)">${timeAgo(n.created_at)}</small></div>
+      </div>`).join(''):'<div class="card" style="text-align:center"><div style="font-size:42px">🔔</div><div class="sub">Nessuna notifica per ora. Quando qualcuno mette mi piace, commenta, ti segue o ti scrive, lo vedrai qui.</div></div>';
+    cloudMarkNotifsRead().then(()=>{ document.querySelectorAll('.notif-badge').forEach(b=>b.style.display='none'); });
+  });
+}
+/* --- Post testuale stile Instagram --- */
+function feedPostCard(p){
+  const liked=isLiked(p.id); const lc=(LIKE_COUNTS[p.id]!=null)?LIKE_COUNTS[p.id]:(p.likes||0); const cc=COMMENT_COUNTS[p.id]||0;
+  const mine=cloudUser&&(p.user_id===cloudUser.id||isAdmin());
+  const av=((p.author||'U').trim()[0]||'U').toUpperCase();
+  const isImg=p.video_url&&(p.is_image||p.isImage);
+  const isVid=p.video_url&&!(p.is_image||p.isImage);
+  const oid=p.user_id||'';
+  return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px" data-pid="${p.id}">
+    <div class="row" style="padding:12px 12px 10px;align-items:center;margin:0">
+      <div class="ri" style="background:var(--mint);color:var(--green-d);font-weight:800">${av}</div>
+      <div class="rt" style="flex:1"><b>${(p.author||'utente').replace(/</g,'&lt;')}</b><small>${(p.type||'Post')}${timeAgo(p.created_at)?' · '+timeAgo(p.created_at):''}</small></div>
+      ${(oid&&cloudUser&&oid!==cloudUser.id)?`<button class="btn sm sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="toggleFollowReal('${oid}',this)">${isFollowingId(oid)?'Segui già':'+ Segui'}</button>`:''}
+    </div>
+    ${isImg?`<img src="${p.video_url}" style="width:100%;max-height:440px;object-fit:cover;display:block">`:''}
+    ${isVid?`<div style="position:relative;background:#0d1512;cursor:pointer" onclick="playVideo('${p.video_url}')"><video src="${p.video_url}#t=0.1" style="width:100%;max-height:440px;object-fit:cover;display:block" muted playsinline preload="metadata"></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:46px;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5)">▶</div></div>`:''}
+    ${p.caption?`<div style="padding:${(isImg||isVid)?'10px':'2px'} 14px 2px;font-size:14px;line-height:1.55;color:var(--ink)">${capWithTags(p.caption)}</div>`:''}
+    <div class="row" style="padding:8px 14px 12px;gap:20px;align-items:center;margin:0">
+      <button class="fbtn" onclick="toggleFeedLike('${p.id}','${oid}',this)"><span class="lic" style="font-size:20px">${liked?'❤️':'🤍'}</span><span class="lc">${fmt(lc)}</span></button>
+      <button class="fbtn" onclick="openComments('${p.id}','${oid}')"><span style="font-size:19px">💬</span><span>${fmt(cc)}</span></button>
+      <button class="fbtn" onclick="sharePost('${p.id}')"><span style="font-size:19px">↗</span></button>
+      <button class="fbtn" style="margin-left:auto" onclick="toggleSaveReal('${p.id}',this)"><span style="font-size:19px">${isSaved(p.id)?'🔖':'🏷️'}</span></button>
+      ${mine?`<button class="fbtn" style="color:var(--coral)" onclick="deletePost('${p.id}')"><span style="font-size:17px">🗑</span></button>`:''}
+    </div>
+  </div>`;
+}
+function toggleFeedLike(pid,ownerId,btn){ if(!(cloudOn()&&loggedIn())){toast('Accedi per mettere mi piace');go('cloud');return;}
+  cloudToggleLike(pid,ownerId||null).then(l=>{ if(btn){ const ic=btn.querySelector('.lic'); if(ic)ic.textContent=l?'❤️':'🤍'; const lc=btn.querySelector('.lc'); if(lc)lc.textContent=fmt(LIKE_COUNTS[pid]||0); } }); }
+async function sharePost(pid){ const url=location.origin+location.pathname+'?post='+pid;
+  try{ if(navigator.share){ await navigator.share({title:'Auréa',text:'Guarda questo post su Auréa',url}); return; } }catch(e){ if((e&&e.name)==='AbortError')return; }
+  try{ await navigator.clipboard.writeText(url); toast('Link copiato 🔗'); }catch(e){ toast('Link: '+url); } }
+function composeUserPost(){ if(!(cloudOn()&&loggedIn())){toast('Accedi per pubblicare');go('cloud');return;}
+  openForm({title:'Nuovo post',subtitle:'Condividi con la community',
+    fields:[{id:'cap',label:'Cosa vuoi condividere?',type:'textarea',ph:'Scrivi qui… puoi usare #hashtag'},{id:'img',label:'Foto (facoltativa)',type:'photo'}],submit:'Pubblica',
+    onSubmit:async(v)=>{ const cap=(v.cap||'').trim(); if(!cap&&!v.img){toast('Scrivi qualcosa o aggiungi una foto');return false;}
+      toast('Pubblico…');
+      try{ const row={user_id:cloudUser.id,author:((S.pro&&S.pro.name)||S.user.name||'utente'),caption:cap,type:'Post',diet:S.diet,goal:S.user.goal,likes:0};
+        if(v.img){ row.video_url=await dataUrlToUrl(v.img,'post.jpg'); row.is_image=true; }
+        let {error}=await SB.from('posts').insert(row);
+        if(error&&/column/.test(error.message||'')){ delete row.is_image; const r2=await SB.from('posts').insert(row); error=r2.error; }
+        if(error)throw error;
+        toast('Post pubblicato ✓'); if(curScreen==='community'){ const t=(document.getElementById('com-body')||{}).dataset; renderComBody((t&&t.t)||'perte'); }
+      }catch(e){ toast('Errore: '+(e.message||e)); } } });
+}
 function communityHTML(){
   return `
-  <div class="topbar"><div class="hello"><div class="k">${(S.following||[]).length} seguiti</div><div class="n">👥 Community</div></div>
-    <button class="compose-btn" style="position:static" onclick="go('dirette')">🔴 Dirette</button></div>
-  <button class="btn sec sm" style="margin-bottom:12px" onclick="go('ricerca')">🔍 Cerca utenti, professionisti, ricette, hashtag…</button>
+  <div class="topbar"><div class="hello"><div class="k">Community Auréa</div><div class="n">👥 Feed</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="avatar" style="border:none;position:relative;font-size:18px" onclick="go('notifiche')">🔔<span class="notif-badge notifdot" style="display:none"></span></button>
+      <button class="avatar" style="border:none;font-size:18px" onclick="go('clientchat')">✉️</button>
+    </div></div>
+  <button class="btn" style="margin-bottom:10px" onclick="composeUserPost()">✏️ Pubblica un post</button>
+  <button class="btn sec sm" style="margin-bottom:12px" onclick="go('ricerca')">🔍 Cerca utenti, hashtag, ricette…</button>
   <div class="seg" id="com-tab" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">
     <button class="on" onclick="comTab('perte',this)">Per te</button>
     <button onclick="comTab('seguiti',this)">Seguiti</button>
     <button onclick="comTab('salvati',this)">Salvati</button>
-    <button onclick="comTab('chat',this)">Chat</button>
   </div>
-  <div class="tiny" style="margin-bottom:10px">Qui guardi i contenuti dei professionisti e delle persone che segui. Le dirette live sono nella pagina <b>Dirette</b>.</div>
   <div id="com-body"></div>`;
 }
 function comTab(t,btn){document.querySelectorAll('#com-tab button').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');renderComBody(t);}
@@ -3729,28 +3842,25 @@ function renderComBody(t){
     return;
   }
   if(t==='perte'||t==='seguiti'||t==='salvati'){
-    const mine=(t==='perte'&&MYSHORTS.length)?`<div class="shorts-feed" id="shorts-feed-my">${MYSHORTS.map(myShortCard).join('')}</div>`:'';
     if(cloudOn()&&loggedIn()){
-      b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Caricamento feed reale…</div></div>';
-      Promise.all([cloudFeed(),cloudLoadFollowing(),cloudLoadSaves()]).then(async ([posts])=>{
+      b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Caricamento feed…</div></div>';
+      cloudFeed().then(async posts=>{
+        await Promise.all([cloudLoadFollowing(),cloudLoadSaves()]);
         await cloudLoadCommentCounts(posts.map(p=>p.id));
+        await cloudLoadLikes(posts.map(p=>p.id));
+        posts.forEach(p=>{ if(LIKE_COUNTS[p.id]!=null)p.likes=LIKE_COUNTS[p.id]; });
         let list=posts;
         if(t==='seguiti') list=posts.filter(p=>FOLLOWING.has(p.user_id));
         else if(t==='salvati') list=posts.filter(p=>isSaved(p.id));
         const ranked=(t==='salvati')?list:rankCloud(list);
         const note=t==='seguiti'?'👥 Solo i profili che segui':(t==='salvati'?'🔖 I tuoi post salvati':'✨ Feed personalizzato · qualità e costanza, non solo like');
-        const empty=t==='seguiti'?'Non segui ancora nessuno: tocca "+ Segui" sui profili che ti piacciono.':(t==='salvati'?'Nessun post salvato. Tocca 🏷️ Salva sui contenuti che vuoi ritrovare.':'Ancora nessun video. Tocca <b>🎬 Crea</b> in alto.');
-        b.innerHTML=(t==='perte'?(mine||''):'')+(ranked.length?`<div class="sub" style="margin:0 4px 8px">${note}</div><div class="shorts-feed" id="shorts-feed">${ranked.map(realShortCard).join('')}</div>`:((t==='perte'&&mine)?'':`<div class="card" style="text-align:center"><div style="font-size:44px">🎬</div><div class="sub">${empty}</div></div>`));
-        wireFeedMedia(b);
+        const empty=t==='seguiti'?'Non segui ancora nessuno: tocca "+ Segui" sui profili che ti piacciono.':(t==='salvati'?'Nessun post salvato. Tocca 🏷️ sui post che vuoi ritrovare.':'Ancora nessun post. Tocca <b>✏️ Pubblica un post</b> per condividere il primo!');
+        b.innerHTML=ranked.length?`<div class="sub" style="margin:0 4px 10px">${note}</div>`+ranked.map(feedPostCard).join(''):`<div class="card" style="text-align:center"><div style="font-size:44px">📝</div><div class="sub">${empty}</div></div>`;
       });
       return;
     }
-    if(t==='salvati'){ b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Attiva la modalità reale (cloud) per salvare i post.</div></div>'; return; }
-    const list=feedShorts(t);
-    if(!list.length&&!mine){b.innerHTML='<div class="card" style="text-align:center"><div class="sub">Non segui ancora nessuno.<br>Vai su "Per te" e tocca <b>+ Segui</b> sui creator che ti piacciono.</div></div>';return;}
-    b.innerHTML=(mine||'')+`<div class="sub" style="margin:0 4px 8px">${t==='perte'?'✨ Feed personalizzato per la tua dieta '+(S.diet||'')+' e il tuo obiettivo '+(S.user.goal||''):'👥 Solo i creator che segui'}${cloudOn()?'':' · <a onclick="go(\'cloud\')" style="color:var(--green-d);font-weight:700;cursor:pointer">attiva video reali</a>'}</div>
-      <div class="shorts-feed" id="shorts-feed">${list.map(s=>shortCard(s)).join('')}</div>`;
-    wireFeedMedia(b);
+    b.innerHTML='<div class="card" style="text-align:center"><div style="font-size:42px">☁️</div><div class="sub">Attiva la modalità reale (cloud) per vedere e pubblicare i post.</div><button class="btn sm" style="margin-top:10px" onclick="go(\'cloud\')">Attiva account</button></div>';
+    return;
   } else {
     b.innerHTML=`
       <div class="alert ok"><span>💬</span><div><b>Gruppo "Percorso benessere"</b> · scambiatevi idee, ricette e supporto in tempo reale.</div></div>
@@ -3810,7 +3920,9 @@ function realShortCard(p){
 function toggleSaveReal(pid,btn){ cloudToggleSave(pid).then(s=>{ if(btn)btn.innerHTML=`<span>${s?'🔖':'🏷️'}</span><span class="cnt">${s?'Salvato':'Salva'}</span>`; toast(s?'Salvato nei tuoi preferiti':'Rimosso dai salvati'); }); }
 function toggleFollowReal(uid,btn){ cloudToggleFollow(uid).then(f=>{ if(btn){btn.textContent=f?'Segui già':'+ Segui'; btn.classList.toggle('ing',f);} toast(f?'Ora segui questo profilo':'Non segui più'); }); }
 function followRecipeAuthor(uid,name,btn){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per seguire'); go('cloud'); return; } cloudToggleFollow(uid).then(f=>{ if(btn)btn.textContent=f?'Segui già':'+ Segui'; toast(f?('Ora segui '+(name||'questo profilo')):'Non segui più'); }); }
-function openComments(pid){
+let _cmtOwner=null;
+function openComments(pid,ownerId){
+  _cmtOwner=ownerId||null;
   const box=modalSheet(`<div class="grab"></div><h3 style="text-align:center;margin:0 0 10px;font-size:16px">💬 Commenti</h3><div id="cmt-list" style="max-height:48vh;overflow-y:auto;margin-bottom:10px"><div class="sub">Caricamento…</div></div><div class="chatbar" style="position:static"><input id="cmt-in" placeholder="Scrivi un commento…" onkeydown="if(event.key==='Enter')sendComment('${pid}')"><button onclick="sendComment('${pid}')">➤</button></div>`);
   renderComments(pid);
 }
@@ -3819,7 +3931,7 @@ function renderComments(pid){ const el=document.getElementById('cmt-list'); if(!
   cloudLoadComments(pid).then(list=>{ el.innerHTML=list.length?list.map(c=>`<div class="row" style="padding:8px 0"><div class="rt"><b style="color:var(--green-d);font-size:12px">@${(c.author||'utente')}</b><small style="white-space:normal">${(c.text||'').replace(/</g,'&lt;')}</small></div></div>`).join(''):'<div class="sub" style="text-align:center;padding:16px">Nessun commento. Scrivi il primo!</div>'; });
 }
 async function sendComment(pid){ const el=document.getElementById('cmt-in'); const t=(el&&el.value||'').trim(); if(!t)return; if(!(cloudOn()&&loggedIn())){toast('Accedi per commentare');return;} el.value='';
-  try{ await cloudAddComment(pid,t); COMMENT_COUNTS[pid]=(COMMENT_COUNTS[pid]||0)+1; renderComments(pid); }catch(e){ toast('Errore: '+(e.message||e)); } }
+  try{ await cloudAddComment(pid,t); COMMENT_COUNTS[pid]=(COMMENT_COUNTS[pid]||0)+1; if(_cmtOwner)cloudNotify(_cmtOwner,'comment',{post_id:pid,text:t}); renderComments(pid); }catch(e){ toast('Errore: '+(e.message||e)); } }
 function likeRealPost(id,cur,btn){ cloudLikePost(id,cur); btn.innerHTML='<span>❤️</span><span class="cnt">'+fmt((cur||0)+1)+'</span>'; }
 /* ===== EDITOR VIDEO + BOZZE ===== */
 let DRAFTS=[], MYSHORTS=[];
@@ -4998,7 +5110,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML, ricette:ricetteHTML, salute:saluteHTML, dirette:diretteHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML, ricette:ricetteHTML, salute:saluteHTML, dirette:diretteHTML, notifiche:notificheHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -5017,7 +5129,8 @@ function afterRender(id){
   }
   if(id==='promemoria'){renderReminders();}
   if(id==='planning'){renderPlanBody('cal');}
-  if(id==='community'){renderComBody('perte');}
+  if(id==='community'){renderComBody('perte'); updateNotifBadge();}
+  if(id==='notifiche'){renderNotifs();}
   if(id==='storia'){renderIntol();}
   if(id==='digiuno'){fastStatus();updateFastEnd();}
   if(id==='pro'){renderProAvail(); if(S.pro)renderPayStatus();}
