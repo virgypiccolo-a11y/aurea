@@ -2314,7 +2314,7 @@ async function cloudStartLive(title){ const room='live-'+cloudUser.id.slice(0,8)
   return data; }
 async function cloudStopLive(){ if(!cloudOn()||!cloudUser)return; try{ await SB.from('lives').update({active:false}).eq('pro_id',cloudUser.id).eq('active',true); }catch(e){} }
 function diretteHTML(){
-  const pro=isProMode();
+  const pro=isProMode()||isAdmin();
   return `<button class="back" onclick="go('home')">← Home</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${pro?'Trasmetti in diretta':'Segui i professionisti live'}</div><div class="n">${ic('video',22)} Dirette</div></div></div>
   <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('video',78)}</span><h4>Dirette live</h4><p>${pro?'Avvia una diretta video: i tuoi follower e gli utenti potranno seguirti in tempo reale.':'Guarda in tempo reale le dirette dei professionisti: lezioni, allenamenti e consigli.'}</p></div>
@@ -2336,7 +2336,7 @@ function renderHomeLive(){ const c=document.getElementById('home-live'); if(!c)r
   });
 }
 function watchLive(room){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per guardare la diretta'); go('cloud'); return; } openVideoCall(room, S.user.name||'Spettatore'); }
-function startDiretta(){ if(!isProMode()){toast('Solo i professionisti possono trasmettere');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per trasmettere');go('cloud');return;}
+function startDiretta(){ if(!isProMode()&&!isAdmin()){toast('Solo i professionisti possono trasmettere');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per trasmettere');go('cloud');return;}
   openForm({title:'Avvia una diretta',subtitle:'Dai un titolo alla tua diretta',fields:[{id:'t',label:'Titolo',ph:'es. Allenamento full body'}],submit:'🔴 Vai in diretta',
     onSubmit:async(v)=>{ const t=(v.t||'').trim()||'Diretta'; try{ const live=await cloudStartLive(t); window._hostingLive=true; openVideoCall(live.room,(S.pro&&S.pro.name)||S.user.name); toast('Sei in diretta! 🔴'); }catch(e){ toast('Errore: '+(e.message||e)); return false; } }
   });
@@ -2451,7 +2451,7 @@ function renderPayStatus(){ const c=document.getElementById('pay-status'); if(!c
   });
 }
 // solo i PERSONAL TRAINER verificati possono caricare video di allenamento
-function canTrainer(){ return !!(S.pro && S.pro.status==='verificato' && /trainer|scienze motorie|coni/i.test((S.pro.profession||'')+' '+(S.pro.ente||''))); }
+function canTrainer(){ return isAdmin() || !!(S.pro && S.pro.status==='verificato' && /trainer|scienze motorie|coni/i.test((S.pro.profession||'')+' '+(S.pro.ente||''))); }
 let CLOUD_WORKOUTS=[], _wkLoaded=false, _wkFetching=false;
 async function cloudLoadWorkouts(){ if(!cloudOn()){CLOUD_WORKOUTS=[];return [];}
   try{ const {data,error}=await SB.from('workouts').select('*').order('created_at',{ascending:false}); if(error)throw error;
@@ -2618,7 +2618,7 @@ function createRecipe(){
 /* ===== MODALITÀ PROFESSIONISTA ===== */
 // Una volta registrato come professionista resta tale finché non preme "Ritira profilo".
 function isProMode(){ return !!S.pro; }
-function canPlan(){ return !!(S.pro && S.pro.status==='verificato' && /nutrizion|dietist|biolog|medico|diabetolog|endocrinolog|psiconutri|dietolog/i.test((S.pro.profession||''))); }
+function canPlan(){ return isAdmin() || !!(S.pro && S.pro.status==='verificato' && /nutrizion|dietist|biolog|medico|diabetolog|endocrinolog|psiconutri|dietolog/i.test((S.pro.profession||''))); }
 function retirePro(){ confirmBox('Ritirare il tuo profilo professionista? Tornerai a usare Auréa come utente.',()=>{
   S.pro=null;
   if(cloudOn()&&cloudUser){ try{ SB.from('pros').delete().eq('id',cloudUser.id); SB.from('profiles').update({is_pro:false,pro_status:null}).eq('id',cloudUser.id); }catch(e){} }
@@ -3666,7 +3666,7 @@ function realShortCard(p){
       <button onclick="openComments('${p.id}')"><span>💬</span><span class="cnt">${fmt(COMMENT_COUNTS[p.id]||0)}</span></button>
       <button onclick="toggleSaveReal('${p.id}',this)"><span>${isSaved(p.id)?'🔖':'🏷️'}</span><span class="cnt">${isSaved(p.id)?'Salvato':'Salva'}</span></button>
       <button onclick="toast('Condiviso 🔗')"><span>↗</span><span class="cnt">Condividi</span></button>
-      ${(cloudUser&&p.user_id===cloudUser.id)?`<button onclick="deletePost('${p.id}')"><span>🗑</span><span class="cnt">Elimina</span></button>`:''}
+      ${(cloudUser&&(p.user_id===cloudUser.id||isAdmin()))?`<button onclick="deletePost('${p.id}')"><span>🗑</span><span class="cnt">Elimina</span></button>`:''}
     </div>
     <div class="info">
       <div class="uname">@${(p.author||'utente')} ${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="foll-btn" onclick="openChatWith('${p.user_id}','${(p.author||'utente').replace(/'/g,'')}')">💬 Messaggia</button> <button class="foll-btn ${isFollowingId(p.user_id)?'ing':''}" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>
