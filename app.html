@@ -606,7 +606,7 @@ function cloudInit(){
 }
 function cloudOn(){ return !!SB; }
 function loggedIn(){ return !!cloudUser; }
-const OWNER_EMAIL="samuele@grenworld.com";
+const OWNER_EMAIL="aurea.wellness.app@gmail.com";
 const POLICY_VERSION="2026-07-01"; // aggiornare a ogni modifica di Termini/Privacy
 function isAdmin(){ return !!(cloudUser && (cloudUser.email||'').toLowerCase()===OWNER_EMAIL); }
 // registro consensi (tracciabilità GDPR)
@@ -2459,6 +2459,7 @@ async function connectStripe(){
   try{ const {data,error}=await SB.functions.invoke('connect-onboard',{ body:{ return_url:location.href } });
     if(error)throw error; if(data&&data.error)throw new Error(data.error);
     if(data&&data.url){ location.href=data.url; return; }
+    if(data&&data.enabled){ toast('Conto già attivo ✓'); renderPayStatus(); return; }
     throw new Error('Link non ricevuto');
   }catch(e){ toast('Configurazione non disponibile: '+(e.message||e)+' — verifica di aver installato la funzione connect-onboard.'); }
 }
