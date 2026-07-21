@@ -239,6 +239,27 @@ body{
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:11px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer}
 .fbtn{background:none;border:none;display:flex;align-items:center;gap:5px;font-weight:700;color:var(--ink);cursor:pointer;font-size:13px;padding:0}
 .notifdot{position:absolute;top:-3px;right:-3px;background:var(--coral);color:#fff;font-size:10px;font-weight:800;min-width:17px;height:17px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+/* ===== Diretta live (LiveKit) ===== */
+.live-panel{position:absolute;inset:0;z-index:230;background:#000;display:flex;flex-direction:column;overflow:hidden;border-radius:40px}
+.live-top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,0));color:#fff;position:absolute;top:0;left:0;right:0;z-index:6}
+.live-dot{animation:lkpulse 1.4s infinite}
+@keyframes lkpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.live-x{background:var(--coral);border:none;color:#fff;padding:8px 13px;border-radius:18px;font-weight:800;font-size:12px;cursor:pointer}
+.live-video{flex:1;display:flex;align-items:center;justify-content:center;background:#0d1512;overflow:hidden}
+.live-remote-video{width:100%;height:100%;object-fit:cover;background:#0d1512}
+.live-hearts{position:absolute;bottom:120px;right:14px;width:70px;height:42vh;pointer-events:none;z-index:5}
+.live-heart{position:absolute;bottom:0;font-size:24px;animation:lkfloat 2.2s ease-out forwards}
+@keyframes lkfloat{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:1}100%{transform:translateY(-40vh) scale(1.25);opacity:0}}
+.live-chat{position:absolute;left:12px;bottom:74px;right:88px;max-height:34vh;overflow-y:auto;z-index:5;display:flex;flex-direction:column;gap:5px}
+.live-cmsg{background:rgba(0,0,0,.42);color:#fff;padding:6px 10px;border-radius:14px;font-size:13px;line-height:1.35;max-width:100%;backdrop-filter:blur(4px);align-self:flex-start}
+.live-cmsg.sys{background:rgba(255,255,255,.16);font-style:italic;font-size:12px}
+.live-cmsg.hl{background:linear-gradient(90deg,#ff6f8b,#ff9a7a);font-weight:700}
+.live-cmsg b{color:#9feecd}
+.live-actions{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;align-items:center;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.7));z-index:6}
+.live-actions input{flex:1;border:none;border-radius:22px;padding:11px 14px;background:rgba(255,255,255,.17);color:#fff;font-size:14px;outline:none}
+.live-actions input::placeholder{color:rgba(255,255,255,.6)}
+.live-ctrl{background:rgba(255,255,255,.17);border:none;color:#fff;width:44px;height:44px;border-radius:22px;font-size:20px;cursor:pointer;flex:0 0 auto}
+.live-ctrl.off{background:var(--coral)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 
 /* bottom nav */
@@ -2323,6 +2344,84 @@ async function cloudStartLive(title){ const room='live-'+cloudUser.id.slice(0,8)
   if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||'')) throw new Error('Manca la tabella "lives": esegui lo script SQL delle dirette.'); throw error; }
   return data; }
 async function cloudStopLive(){ if(!cloudOn()||!cloudUser)return; try{ await SB.from('lives').update({active:false}).eq('pro_id',cloudUser.id).eq('active',true); }catch(e){} }
+/* ===== DIRETTA LIVE REALE (LiveKit) — video + spettatori + chat + like + donazioni ===== */
+let _live=null, _lkLoading=false;
+function ensureLiveKit(){ return new Promise((res,rej)=>{ if(window.LivekitClient){res();return;}
+  const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js';
+  s.onload=()=>res(); s.onerror=()=>rej(new Error('Non riesco a caricare il motore video')); document.head.appendChild(s); }); }
+async function openLive(roomName,opts){
+  opts=opts||{}; const isHost=!!opts.host;
+  if(!roomName){toast('Diretta non disponibile');return;}
+  if(!(cloudOn()&&loggedIn())){toast('Accedi per la diretta');go('cloud');return;}
+  const host=(document.querySelector('.phone')||document.body);
+  const box=document.createElement('div'); box.id='live-panel'; box.className='live-panel';
+  box.innerHTML=`
+    <div class="live-top">
+      <div style="display:flex;align-items:center;gap:9px;min-width:0">
+        <span class="live-dot">🔴</span>
+        <div style="min-width:0"><b style="font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">${(opts.title||'Diretta').replace(/</g,'&lt;')}</b>
+        <span style="font-size:11px;opacity:.85">👁 <span id="live-count">1</span> in diretta</span></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="live-x" style="background:rgba(255,255,255,.18)" onclick="sharePost('${roomName}')">↗</button>
+        <button class="live-x" onclick="closeLive()">${isHost?'Termina':'Esci'}</button>
+      </div>
+    </div>
+    <div id="live-video" class="live-video"><div class="sub" style="color:#9feecd">Connessione…</div></div>
+    <div id="live-hearts" class="live-hearts"></div>
+    <div id="live-chat" class="live-chat"></div>
+    <div class="live-actions">
+      ${isHost
+        ?`<button class="live-ctrl" id="live-mic" onclick="liveToggleMic()">🎤</button><button class="live-ctrl" id="live-cam" onclick="liveToggleCam()">📷</button>`
+        :`<button class="live-ctrl" onclick="liveSendLike()">🤍</button><button class="live-ctrl" onclick="liveDonate('${roomName}','${(opts.hostId||'').replace(/'/g,'')}')">💝</button>`}
+      <input id="live-msg" placeholder="Scrivi un commento…" onkeydown="if(event.key==='Enter')liveSendChat()">
+      <button class="live-ctrl" onclick="liveSendChat()">➤</button>
+    </div>`;
+  host.appendChild(box);
+  try{
+    await ensureLiveKit();
+    const {data,error}=await SB.functions.invoke('livekit-token',{body:{room:roomName,name:(S.user.name||'Utente'),host:isHost}});
+    if(error||!data||!data.token) throw new Error((error&&error.message)||'token non disponibile — controlla la funzione livekit-token');
+    const LK=window.LivekitClient;
+    const room=new LK.Room({adaptiveStream:true,dynacast:true});
+    _live={room,isHost,roomName,micOn:isHost,camOn:isHost};
+    room.on(LK.RoomEvent.TrackSubscribed,(track)=>{ const el=track.attach();
+      if(track.kind==='video'){ el.className='live-remote-video'; const v=document.getElementById('live-video'); if(v){v.innerHTML='';v.appendChild(el);} }
+      else { el.style.display='none'; document.body.appendChild(el); } });
+    room.on(LK.RoomEvent.ParticipantConnected,(pt)=>{ liveUpdateCount(); liveSystem(((pt&&pt.name)||'Qualcuno')+' è entrato'); });
+    room.on(LK.RoomEvent.ParticipantDisconnected,()=>liveUpdateCount());
+    room.on(LK.RoomEvent.DataReceived,(payload,participant)=>{ try{ liveHandleData(JSON.parse(new TextDecoder().decode(payload)),participant); }catch(e){} });
+    room.on(LK.RoomEvent.Disconnected,()=>{ if(document.getElementById('live-panel'))closeLive(); });
+    await room.connect(data.url,data.token);
+    if(isHost){
+      await room.localParticipant.setCameraEnabled(true);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      setTimeout(()=>{ try{ room.localParticipant.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ const el=pub.track.attach(); el.className='live-remote-video'; el.muted=true; const v=document.getElementById('live-video'); if(v){v.innerHTML='';v.appendChild(el);} } }); }catch(e){} },400);
+    } else { const v=document.getElementById('live-video'); if(v&&!v.querySelector('video'))v.innerHTML='<div class="sub" style="color:#9feecd">In attesa del video del creatore…</div>'; }
+    liveUpdateCount();
+  }catch(e){ const v=document.getElementById('live-video'); if(v)v.innerHTML='<div style="color:#fff;padding:24px;text-align:center;font-size:14px">Non riesco ad avviare la diretta.<br><br><span style="opacity:.8;font-size:12px">'+((e&&e.message)||e)+'</span></div>'; }
+}
+function liveUpdateCount(){ if(!_live)return; const el=document.getElementById('live-count'); if(el){ const rp=_live.room&&(_live.room.remoteParticipants||_live.room.participants); const n=rp&&rp.size!=null?rp.size:0; el.textContent=n+1; } }
+function liveSystem(txt){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg sys'; d.textContent=txt; c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
+function liveChatLine(name,text,hl){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg'+(hl?' hl':''); d.innerHTML='<b>'+String(name).replace(/</g,'&lt;')+'</b> '+String(text).replace(/</g,'&lt;'); c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
+function _trimLiveChat(c){ while(c.children.length>40)c.removeChild(c.firstChild); }
+function liveSpawnHeart(){ const h=document.getElementById('live-hearts'); if(!h)return; const s=document.createElement('span'); s.className='live-heart'; s.textContent='❤️'; s.style.left=Math.floor(Math.random()*60)+'%'; h.appendChild(s); setTimeout(()=>{try{s.remove();}catch(e){}},2200); }
+function liveHandleData(m,participant){ const name=(m&&m.name)||(participant&&participant.name)||'Utente';
+  if(!m)return; if(m.t==='chat'){ liveChatLine(name,m.text); } else if(m.t==='like'){ liveSpawnHeart(); } else if(m.t==='donation'){ liveChatLine(name,'💝 ha donato €'+m.amount,true); liveSpawnHeart(); } }
+function _livePublish(obj){ if(!_live||!_live.room)return; try{ _live.room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(obj)),{reliable:true}); }catch(e){} }
+function liveSendChat(){ const el=document.getElementById('live-msg'); const t=(el&&el.value||'').trim(); if(!t)return; el.value=''; const name=(S.user.name||'Tu'); liveChatLine(name,t); _livePublish({t:'chat',name,text:t}); }
+function liveSendLike(){ liveSpawnHeart(); _livePublish({t:'like',name:(S.user.name||'')}); }
+function liveToggleMic(){ if(!_live)return; _live.micOn=!_live.micOn; try{_live.room.localParticipant.setMicrophoneEnabled(_live.micOn);}catch(e){} const b=document.getElementById('live-mic'); if(b){ b.textContent=_live.micOn?'🎤':'🔇'; b.classList.toggle('off',!_live.micOn); } toast(_live.micOn?'Microfono attivo':'Microfono in muto'); }
+function liveToggleCam(){ if(!_live)return; _live.camOn=!_live.camOn; try{_live.room.localParticipant.setCameraEnabled(_live.camOn);}catch(e){} const b=document.getElementById('live-cam'); if(b){ b.textContent=_live.camOn?'📷':'🚫'; b.classList.toggle('off',!_live.camOn); } }
+function closeLive(){ const wasHost=_live&&_live.isHost; try{ if(_live&&_live.room)_live.room.disconnect(); }catch(e){} _live=null; const b=document.getElementById('live-panel'); if(b)b.remove(); if(wasHost){ try{cloudStopLive();}catch(e){} if(curScreen==='dirette')renderDirette(); toast('Diretta terminata'); } }
+async function liveDonate(room,hostId){ if(!(cloudOn()&&loggedIn())){toast('Accedi per donare');return;} if(!hostId){toast('Donazioni non disponibili per questa diretta');return;}
+  openForm({title:'💝 Fai una donazione',subtitle:'Sostieni il creatore della diretta',fields:[{id:'amt',label:'Importo (€)',type:'number',value:'5'}],submit:'Dona',
+    onSubmit:async(v)=>{ const amt=Math.round(parseFloat((''+v.amt).replace(',','.'))); if(!amt||amt<1){toast('Importo minimo €1');return false;}
+      toast('Apro il pagamento…');
+      try{ const {data,error}=await SB.functions.invoke('live-tip',{body:{host_id:hostId,amount:amt,room,success_url:location.href,cancel_url:location.href}});
+        if(error)throw error; if(data&&data.url){ _livePublish({t:'donation',name:(S.user.name||'Un utente'),amount:amt}); location.href=data.url; } else throw new Error('checkout non disponibile'); }
+      catch(e){ toast('Donazione non riuscita: '+(e.message||e)); return false; } } });
+}
 function diretteHTML(){
   const pro=isProMode()||isAdmin();
   return `<button class="back" onclick="go('home')">← Home</button>
@@ -2335,20 +2434,20 @@ function diretteHTML(){
 function renderDirette(){ const c=document.getElementById('dirette-list'); if(!c)return;
   if(!cloudOn()){ c.innerHTML='<div class="card" style="text-align:center"><div class="sub">Attiva la modalità reale per vedere le dirette.</div></div>'; return; }
   cloudLoadLives().then(lives=>{
-    c.innerHTML=lives.length?lives.map(l=>`<div class="card"><div class="row"><div class="ri" style="background:var(--coral-s);color:var(--coral)">🔴</div><div class="rt" style="flex:1"><b>${(l.title||'Diretta').replace(/</g,'&lt;')}</b><small>${l.pro_name||'Professionista'} · in diretta ora</small></div></div><button class="btn sm" style="margin-top:8px" onclick="watchLive('${l.room}')">▶ Guarda la diretta</button></div>`).join(''):'<div class="card" style="text-align:center"><div style="font-size:40px">📡</div><div class="sub">Nessuna diretta in corso in questo momento. Torna più tardi!</div></div>';
+    c.innerHTML=lives.length?lives.map(l=>`<div class="card"><div class="row"><div class="ri" style="background:var(--coral-s);color:var(--coral)">🔴</div><div class="rt" style="flex:1"><b>${(l.title||'Diretta').replace(/</g,'&lt;')}</b><small>${l.pro_name||'Professionista'} · in diretta ora</small></div></div><button class="btn sm" style="margin-top:8px" onclick="watchLive('${l.room}','${l.pro_id||''}','${(l.pro_name||'').replace(/'/g,'')}')">▶ Guarda la diretta</button></div>`).join(''):'<div class="card" style="text-align:center"><div style="font-size:40px">📡</div><div class="sub">Nessuna diretta in corso in questo momento. Torna più tardi!</div></div>';
   });
 }
 function renderHomeLive(){ const c=document.getElementById('home-live'); if(!c)return; c.innerHTML='';
   if(!cloudOn())return;
   cloudLoadLives().then(lives=>{ if(!lives.length||!document.getElementById('home-live'))return;
     const l=lives[0];
-    document.getElementById('home-live').innerHTML=`<div class="section-title" style="margin-top:16px">🔴 In diretta ora</div><div class="card" onclick="watchLive('${l.room}')" style="cursor:pointer"><div class="row"><div class="ri" style="background:var(--coral-s);color:var(--coral)">🔴</div><div class="rt" style="flex:1"><b>${(l.title||'Diretta').replace(/</g,'&lt;')}</b><small>${l.pro_name||'Professionista'}${lives.length>1?' · e altre '+(lives.length-1):''}</small></div><div class="rv">▶</div></div></div>`;
+    document.getElementById('home-live').innerHTML=`<div class="section-title" style="margin-top:16px">🔴 In diretta ora</div><div class="card" onclick="watchLive('${l.room}','${l.pro_id||''}','${(l.pro_name||'').replace(/'/g,'')}')" style="cursor:pointer"><div class="row"><div class="ri" style="background:var(--coral-s);color:var(--coral)">🔴</div><div class="rt" style="flex:1"><b>${(l.title||'Diretta').replace(/</g,'&lt;')}</b><small>${l.pro_name||'Professionista'}${lives.length>1?' · e altre '+(lives.length-1):''}</small></div><div class="rv">▶</div></div></div>`;
   });
 }
-function watchLive(room){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per guardare la diretta'); go('cloud'); return; } openVideoCall(room, S.user.name||'Spettatore', {viewer:true, title:'🔴 Diretta live', sub:'stai guardando'}); }
+function watchLive(room,hostId,hostName){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per guardare la diretta'); go('cloud'); return; } openLive(room,{host:false,hostId:hostId||'',title:hostName?('Diretta di '+hostName):'🔴 Diretta live'}); }
 function startDiretta(){ if(!isProMode()&&!isAdmin()){toast('Solo i professionisti possono trasmettere');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per trasmettere');go('cloud');return;}
   openForm({title:'Avvia una diretta',subtitle:'Dai un titolo alla tua diretta',fields:[{id:'t',label:'Titolo',ph:'es. Allenamento full body'}],submit:'🔴 Vai in diretta',
-    onSubmit:async(v)=>{ const t=(v.t||'').trim()||'Diretta'; try{ const live=await cloudStartLive(t); window._hostingLive=true; openVideoCall(live.room,(S.pro&&S.pro.name)||S.user.name,{title:'🔴 Sei in diretta',sub:t}); toast('Sei in diretta! 🔴'); }catch(e){ toast('Errore: '+(e.message||e)); return false; } }
+    onSubmit:async(v)=>{ const t=(v.t||'').trim()||'Diretta'; try{ const live=await cloudStartLive(t); openLive(live.room,{host:true,hostId:cloudUser.id,title:'🔴 '+t}); toast('Sei in diretta! 🔴'); }catch(e){ toast('Errore: '+(e.message||e)); return false; } }
   });
 }
 let CLOUD_APPTS=[];
