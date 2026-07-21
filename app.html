@@ -677,7 +677,12 @@ async function _deleteMyAccount(){
 function preloadCloud(){ renderNav(); if(S.pro && S.pro.status==='in_verifica'){ setTimeout(verifyPro,600); } if(!cloudOn())return;
   cloudLoadProducts().then(()=>{ _prodLoaded=true; if(curScreen==='home')rebuild('home'); if(curScreen==='shop')rebuild('shop'); });
   cloudLoadDocs().then(()=>{ _docsLoaded=true; if(curScreen==='prenota')renderDocs('Tutti'); });
+  cloudRegisterDirectory();
 }
+// Elenco pubblico degli iscritti (solo id + nome), per farli trovare e seguire senza cercarli
+let DIRECTORY=[], _dirLoaded=false, _dirFetching=false;
+async function cloudRegisterDirectory(){ if(!cloudOn()||!cloudUser)return; try{ await SB.from('directory').upsert({id:cloudUser.id,name:(S.user&&S.user.name)||'Utente',updated_at:new Date().toISOString()}); }catch(e){} }
+async function cloudLoadDirectory(){ if(!cloudOn()){DIRECTORY=[];return [];} try{ const {data,error}=await SB.from('directory').select('id,name').order('name',{ascending:true}).limit(500); if(error)throw error; DIRECTORY=(data||[]).filter(u=>u&&u.name); return DIRECTORY; }catch(e){ return DIRECTORY; } }
 async function cloudCheckSession(){ if(!cloudOn())return null; try{ const {data}=await SB.auth.getSession(); cloudUser=data&&data.session?data.session.user:null; if(cloudUser){ const had=await cloudLoadProfile(); postAuth(had); } }catch(e){} return cloudUser; }
 async function cloudSignUp(email,pass){
   const {data,error}=await SB.auth.signUp({email,password:pass}); if(error) throw error;
@@ -708,6 +713,7 @@ async function cloudSaveProfile(){
     is_pro:!!S.pro, pro_status:S.pro?S.pro.status:null, profession:S.pro?S.pro.profession:null,
     data:S, updated_at:new Date().toISOString()
   }); }catch(e){}
+  cloudRegisterDirectory();
   // scheda PUBBLICA del professionista (senza dati sanitari privati)
   try{
     if(S.pro){ await SB.from('pros').upsert({ id:cloudUser.id, name:S.pro.name||S.user.name, profession:S.pro.profession||'', ic:S.pro.ic||'👤', price:S.pro.price||'€—', ente:S.pro.ente||'', followers:S.pro.followers||0, modes:['Online','In studio'], avail:S.pro.avail||[], recommends:S.pro.recommends||[], status:S.pro.status||'in_verifica', updated_at:new Date().toISOString() }); }
@@ -2383,7 +2389,7 @@ async function openLive(roomName,opts){
     <div id="live-chat" class="live-chat"></div>
     <div class="live-actions" id="live-actions"></div>`;
   host.appendChild(box);
-  _live={room:null,roomName,mode,owner:(isHost&&mode==='live'),broadcastOwner:(isHost&&mode==='live'),publishing:publish,hostId:opts.hostId||'',micOn:publish,camOn:publish,_switching:false};
+  _live={room:null,roomName,mode,owner:(isHost&&mode==='live'),broadcastOwner:(isHost&&mode==='live'),publishing:publish,hostId:opts.hostId||'',micOn:publish,camOn:publish,facing:'user',_switching:false};
   liveRenderActions();
   try{ await liveConnect(publish); }
   catch(e){ const v=document.getElementById('live-video'); if(v)v.innerHTML='<div style="color:#fff;padding:24px;text-align:center;font-size:14px">Non riesco ad avviare.<br><br><span style="opacity:.8;font-size:12px">'+((e&&e.message)||e)+'</span></div>'; }
@@ -2421,6 +2427,7 @@ function liveAttachVideo(participant,track,isLocal){
   if(!tile){ tile=document.createElement('div'); tile.className='live-tile'; tile.id=tid; v.appendChild(tile); }
   tile.innerHTML='';
   const el=track.attach(); el.className='live-remote-video'; el.setAttribute('playsinline',''); el.autoplay=true; if(isLocal)el.muted=true;
+  if(isLocal && _live && _live.facing!=='environment') el.style.transform='scaleX(-1)';   // auto-specchio quando usi la camera frontale
   tile.appendChild(el);
   const nm=document.createElement('div'); nm.className='live-tile-name'; nm.textContent=isLocal?'Tu':((participant&&participant.name)||'—'); tile.appendChild(nm);
   if(_live&&_live.owner&&!isLocal){ const k=document.createElement('button'); k.className='live-kick'; k.textContent='✕ espelli'; k.onclick=()=>liveKick(participant.identity,participant.name); tile.appendChild(k); }
@@ -2429,7 +2436,7 @@ function liveRemoveTile(identity){ if(!identity)return; const t=document.getElem
   const a=document.querySelector('audio[data-aid="a-'+cssId(identity)+'"]'); if(a)a.remove();
   const v=document.getElementById('live-video'); if(v&&!v.querySelector('.live-tile')){ v.classList.remove('live-grid'); v.dataset.placeholder='1'; v.innerHTML='<div class="sub" style="color:#9feecd">'+((_live&&_live.publishing)?'La tua camera è attiva':'In attesa del video…')+'</div>'; } }
 function liveRenderActions(){ const a=document.getElementById('live-actions'); if(!a||!_live)return; let html='';
-  if(_live.publishing){ html+=`<button class="live-ctrl" id="live-mic" onclick="liveToggleMic()">${_live.micOn?'🎤':'🔇'}</button><button class="live-ctrl" id="live-cam" onclick="liveToggleCam()">${_live.camOn?'📷':'🚫'}</button>`; }
+  if(_live.publishing){ html+=`<button class="live-ctrl" id="live-mic" onclick="liveToggleMic()">${_live.micOn?'🎤':'🔇'}</button><button class="live-ctrl" id="live-cam" onclick="liveToggleCam()">${_live.camOn?'📷':'🚫'}</button><button class="live-ctrl" onclick="liveFlipCam()" title="Gira fotocamera">🔄</button>`; }
   else { html+=`<button class="live-ctrl" onclick="liveSendLike()">🤍</button>`;
     if(_live.hostId)html+=`<button class="live-ctrl" onclick="liveDonate('${_live.roomName}','${(_live.hostId||'').replace(/'/g,'')}')">💝</button>`;
     if(_live.mode==='live')html+=`<button class="live-ctrl" id="live-join" onclick="liveRequestJoin()" title="Chiedi di partecipare">🙋</button>`; }
@@ -2443,6 +2450,13 @@ async function liveBecomeCoHost(){ if(!_live||_live.publishing)return; toast('Se
   try{ await liveConnect(true); }catch(e){ toast('Errore ingresso: '+(e.message||e)); _live.publishing=false; }
   _live._switching=false; liveRenderActions(); }
 function liveKick(identity,name){ if(!_live||!_live.owner)return; confirmBox('Espellere '+((name||'questo utente')).replace(/</g,'&lt;')+' dalla diretta?',()=>{ _livePublish({t:'kick',target:identity}); liveRemoveTile(identity); toast('Utente espulso'); },{icon:'🚫',yes:'Espelli',danger:true}); }
+async function liveFlipCam(){ if(!_live||!_live.publishing||!_live.room){toast('Camera non attiva');return;}
+  _live.facing=(_live.facing==='environment')?'user':'environment';
+  try{ await _live.room.localParticipant.setCameraEnabled(true,{facingMode:_live.facing});
+    setTimeout(()=>{ try{ _live.room.localParticipant.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(_live.room.localParticipant,pub.track,true); } }); }catch(e){} },300);
+    _live.camOn=true; const b=document.getElementById('live-cam'); if(b){b.textContent='📷';b.classList.remove('off');}
+    toast(_live.facing==='environment'?'Fotocamera posteriore':'Fotocamera frontale (specchiata)');
+  }catch(e){ _live.facing=(_live.facing==='environment')?'user':'environment'; toast('Questo dispositivo non permette di girare la camera'); } }
 function liveSystem(txt){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg sys'; d.textContent=txt; c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function liveChatLine(name,text,hl){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg'+(hl?' hl':''); d.innerHTML='<b>'+String(name).replace(/</g,'&lt;')+'</b> '+String(text).replace(/</g,'&lt;'); c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function _trimLiveChat(c){ while(c.children.length>40)c.removeChild(c.firstChild); }
@@ -3832,24 +3846,36 @@ function ricercaHTML(){
 }
 function searchTag(t){ _searchQ='#'+t; _searchFilter='Hashtag'; go('ricerca'); setTimeout(runSearch,60); }
 function loadSearchData(){
-  if(cloudOn()){ if(!_docsLoaded)cloudLoadDocs().then(()=>{_docsLoaded=true;runSearch();}); if(!_wkLoaded)cloudLoadWorkouts().then(()=>{_wkLoaded=true;runSearch();}); if(!_recLoaded)cloudLoadRecipes().then(()=>{_recLoaded=true;runSearch();}); cloudFeed().then(ps=>{SEARCH_POSTS=ps;runSearch();}); }
+  if(cloudOn()){ if(!_docsLoaded)cloudLoadDocs().then(()=>{_docsLoaded=true;runSearch();}); if(!_wkLoaded)cloudLoadWorkouts().then(()=>{_wkLoaded=true;runSearch();}); if(!_recLoaded)cloudLoadRecipes().then(()=>{_recLoaded=true;runSearch();}); cloudFeed().then(ps=>{SEARCH_POSTS=ps;runSearch();});
+    if(!_dirFetching){ _dirFetching=true; cloudLoadDirectory().then(()=>{_dirLoaded=true;_dirFetching=false;runSearch();}); } }
   runSearch();
+}
+function personRow(id,name){ const nm=(name||'Utente'); const me=cloudUser&&id===cloudUser.id;
+  return `<div class="row"><div class="ri" style="background:var(--mint);color:var(--green-d);${!me?'cursor:pointer':''}" ${!me?`onclick="tapAuthor('${id}','${nm.replace(/'/g,'')}')"`:''}>${(nm.trim()[0]||'U').toUpperCase()}</div><div class="rt" style="flex:1"><b>${nm.replace(/</g,'&lt;')}${me?' <span style="color:var(--muted);font-weight:400">(tu)</span>':''}</b></div>${!me?`<button class="btn sm sec" style="width:auto;padding:7px 10px;font-size:12px;margin-right:6px" onclick="openChatWith('${id}','${nm.replace(/'/g,'')}')">💬</button><button class="btn sm sec" data-fuid="${id}" style="width:auto;padding:7px 12px;font-size:12px" onclick="toggleFollowReal('${id}',this)">${isFollowingId(id)?'Segui già':'+ Segui'}</button>`:''}</div>`;
 }
 function runSearch(){
   const el=document.getElementById('search-results'); if(!el)return;
   const q=(_searchQ||'').trim().toLowerCase().replace(/^#/,''); const f=_searchFilter;
-  if(!q){ el.innerHTML=`<div class="card" style="text-align:center"><div style="color:var(--muted)">${ic('users',34)}</div><div class="sub">Cerca professionisti, utenti, allenamenti, ricette o hashtag. Prova con "${(S.user.goal||'dimagrimento').toLowerCase()}" o "#ricetta".</div></div>`; return; }
+  if(!q){
+    // Nessuna ricerca digitata: mostra TUTTI gli iscritti, così si possono seguire senza cercarli
+    if(!cloudOn()){ el.innerHTML=`<div class="card" style="text-align:center"><div class="sub">Attiva la modalità reale per vedere gli iscritti.</div></div>`; return; }
+    const people=(DIRECTORY||[]).filter(u=>!(cloudUser&&u.id===cloudUser.id));
+    el.innerHTML=`<div class="section-title" style="margin-top:0">Persone su Auréa${people.length?' ('+people.length+')':''}</div>`+
+      (people.length?people.map(u=>personRow(u.id,u.name)).join(''):`<div class="card" style="text-align:center"><div style="font-size:38px">👥</div><div class="sub">${_dirLoaded?'Ancora nessun altro iscritto. Quando altri si registrano compaiono qui e puoi seguirli.':'Caricamento iscritti…'}</div></div>`);
+    return;
+  }
   let html='';
   // Professionisti
   if(f==='Tutti'||f==='Professionisti'){
     const docs=(CLOUD_DOCS||[]).filter(d=>((d.n||'')+' '+(d.s||'')+' '+(d.ente||'')).toLowerCase().includes(q));
     if(docs.length) html+=`<div class="section-title" style="margin-top:0">Professionisti</div>`+docs.slice(0,10).map(d=>`<div class="pro"><div class="ph">${d.ic||'👤'}</div><div class="pi"><b>${d.n} ${d.v?'✔️':''}</b><small>${d.s} · ${d.ente||''}</small></div><div style="align-self:center"><button class="btn sm" style="width:auto;padding:8px 12px" onclick="openBooking('${(d.n||'').replace(/'/g,'')}','${(d.s||'').replace(/'/g,'')}','${d.ic||'👤'}','${d.id||''}')">Prenota</button></div></div>`).join('');
   }
-  // Utenti (autori dei post)
+  // Utenti (tutti gli iscritti dalla directory + autori dei post)
   if(f==='Tutti'||f==='Utenti'){
     const seen={}; const users=[];
-    (SEARCH_POSTS||[]).forEach(p=>{ const nm=(p.author||''); if(nm&&nm.toLowerCase().includes(q)&&!seen[p.user_id]){seen[p.user_id]=1;users.push(p);} });
-    if(users.length) html+=`<div class="section-title">Utenti</div>`+users.slice(0,10).map(p=>`<div class="row"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('user',20)}</div><div class="rt" style="flex:1"><b>@${p.author}</b></div>${(p.user_id&&cloudUser&&p.user_id!==cloudUser.id)?`<button class="btn sm sec" style="width:auto;padding:7px 10px;font-size:12px;margin-right:6px" onclick="openChatWith('${p.user_id}','${(p.author||'utente').replace(/'/g,'')}')">💬</button><button class="btn sm sec" style="width:auto;padding:7px 12px;font-size:12px" onclick="toggleFollowReal('${p.user_id}',this)">${isFollowingId(p.user_id)?'Segui già':'+ Segui'}</button>`:''}</div>`).join('');
+    (DIRECTORY||[]).forEach(u=>{ if(u.name&&u.name.toLowerCase().includes(q)&&!seen[u.id]){seen[u.id]=1;users.push({id:u.id,name:u.name});} });
+    (SEARCH_POSTS||[]).forEach(p=>{ const nm=(p.author||''); if(nm&&nm.toLowerCase().includes(q)&&p.user_id&&!seen[p.user_id]){seen[p.user_id]=1;users.push({id:p.user_id,name:nm});} });
+    if(users.length) html+=`<div class="section-title">Utenti</div>`+users.slice(0,20).map(u=>personRow(u.id,u.name)).join('');
   }
   // Video / Allenamenti
   if(f==='Tutti'||f==='Video'){
