@@ -253,6 +253,9 @@ body{
 .live-tile .live-remote-video{border-radius:12px}
 .live-tile-name{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
 .live-kick{position:absolute;top:6px;right:6px;background:var(--coral);color:#fff;border:none;font-size:11px;font-weight:800;padding:4px 9px;border-radius:11px;cursor:pointer}
+.live-jr{position:absolute;top:60px;left:12px;right:12px;z-index:9;background:rgba(13,21,18,.94);backdrop-filter:blur(6px);color:#fff;padding:10px 12px;border-radius:14px;display:flex;align-items:center;gap:8px;font-size:13px;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+.live-jr button{background:var(--green);color:#fff;border:none;border-radius:12px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer;flex:0 0 auto}
+.live-jr button.no{background:rgba(255,255,255,.22)}
 .live-hearts{position:absolute;bottom:120px;right:14px;width:70px;height:42vh;pointer-events:none;z-index:5}
 .live-heart{position:absolute;bottom:0;font-size:24px;animation:lkfloat 2.2s ease-out forwards}
 @keyframes lkfloat{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:1}100%{transform:translateY(-40vh) scale(1.25);opacity:0}}
@@ -280,7 +283,7 @@ body{
 
 /* toast */
 .toast{position:absolute;left:50%;bottom:100px;transform:translateX(-50%) translateY(20px);background:#10201a;color:#fff;
-  padding:12px 18px;border-radius:14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.3s;z-index:50;max-width:80%;text-align:center}
+  padding:12px 18px;border-radius:14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.3s;z-index:300;max-width:80%;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* cart badge */
@@ -2450,13 +2453,30 @@ async function liveBecomeCoHost(){ if(!_live||_live.publishing)return; toast('Se
   try{ await liveConnect(true); }catch(e){ toast('Errore ingresso: '+(e.message||e)); _live.publishing=false; }
   _live._switching=false; liveRenderActions(); }
 function liveKick(identity,name){ if(!_live||!_live.owner)return; confirmBox('Espellere '+((name||'questo utente')).replace(/</g,'&lt;')+' dalla diretta?',()=>{ _livePublish({t:'kick',target:identity}); liveRemoveTile(identity); toast('Utente espulso'); },{icon:'🚫',yes:'Espelli',danger:true}); }
+// Richiesta di partecipare: mostrata DENTRO il pannello diretta (così il creatore la vede subito, non dietro)
+function liveShowJoinReq(id,name){ const panel=document.getElementById('live-panel'); if(!panel)return; if(document.getElementById('jr-'+cssId(id)))return;
+  const bar=document.createElement('div'); bar.className='live-jr'; bar.id='jr-'+cssId(id);
+  bar.innerHTML=`<span style="flex:1;min-width:0">🙋 <b>${(name||'Un utente').replace(/</g,'&lt;')}</b> vuole partecipare</span>
+    <button onclick="liveApprove('${id}','${(name||'').replace(/'/g,'')}',this)">Autorizza</button>
+    <button class="no" onclick="this.parentElement.remove()">No</button>`;
+  panel.appendChild(bar); toast('🙋 '+((name||'Un utente'))+' vuole partecipare'); }
+function liveApprove(id,name,btn){ _livePublish({t:'approve',target:id}); if(btn&&btn.parentElement)btn.parentElement.remove(); toast('Hai autorizzato '+(name||'')); }
 async function liveFlipCam(){ if(!_live||!_live.publishing||!_live.room){toast('Camera non attiva');return;}
-  _live.facing=(_live.facing==='environment')?'user':'environment';
-  try{ await _live.room.localParticipant.setCameraEnabled(true,{facingMode:_live.facing});
-    setTimeout(()=>{ try{ _live.room.localParticipant.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(_live.room.localParticipant,pub.track,true); } }); }catch(e){} },300);
-    _live.camOn=true; const b=document.getElementById('live-cam'); if(b){b.textContent='📷';b.classList.remove('off');}
-    toast(_live.facing==='environment'?'Fotocamera posteriore':'Fotocamera frontale (specchiata)');
-  }catch(e){ _live.facing=(_live.facing==='environment')?'user':'environment'; toast('Questo dispositivo non permette di girare la camera'); } }
+  const next=(_live.facing==='environment')?'user':'environment';
+  const lp=_live.room.localParticipant;
+  try{
+    // riacquisisce davvero l'altra fotocamera: spenta e riaccesa con il nuovo lato
+    await lp.setCameraEnabled(false);
+    await new Promise(r=>setTimeout(r,150));
+    await lp.setCameraEnabled(true,{facingMode:{ideal:next}});
+    _live.facing=next; _live.camOn=true;
+    setTimeout(()=>{ try{ lp.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(lp,pub.track,true); } }); }catch(e){} },350);
+    const b=document.getElementById('live-cam'); if(b){b.textContent='📷';b.classList.remove('off');}
+    toast(next==='environment'?'Fotocamera posteriore 📷':'Fotocamera frontale 🤳');
+  }catch(e){
+    try{ await lp.setCameraEnabled(true,{facingMode:{ideal:_live.facing}}); }catch(_){}
+    toast('Questo dispositivo non permette di girare la camera');
+  } }
 function liveSystem(txt){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg sys'; d.textContent=txt; c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function liveChatLine(name,text,hl){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg'+(hl?' hl':''); d.innerHTML='<b>'+String(name).replace(/</g,'&lt;')+'</b> '+String(text).replace(/</g,'&lt;'); c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function _trimLiveChat(c){ while(c.children.length>40)c.removeChild(c.firstChild); }
@@ -2466,7 +2486,7 @@ function liveHandleData(m,participant){ const name=(m&&m.name)||(participant&&pa
   if(m.t==='chat'){ liveChatLine(name,m.text); }
   else if(m.t==='like'){ liveSpawnHeart(); }
   else if(m.t==='donation'){ liveChatLine(name,'💝 ha donato €'+m.amount,true); liveSpawnHeart(); }
-  else if(m.t==='joinreq'){ if(_live&&_live.owner){ confirmBox((name).replace(/</g,'&lt;')+' vuole partecipare alla diretta. Autorizzi?',()=>{ _livePublish({t:'approve',target:m.id}); toast('Hai autorizzato '+name); },{icon:'🙋',yes:'Autorizza',no:'Rifiuta'}); } }
+  else if(m.t==='joinreq'){ if(_live&&_live.owner){ liveShowJoinReq(m.id,name); } }
   else if(m.t==='approve'){ if(_live&&!_live.publishing&&_live.room&&m.target===_live.room.localParticipant.identity){ liveBecomeCoHost(); } }
   else if(m.t==='kick'){ if(_live&&_live.room&&m.target===_live.room.localParticipant.identity){ toast('Sei stato rimosso dalla diretta'); closeLive(); } } }
 function _livePublish(obj){ if(!_live||!_live.room)return; try{ _live.room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(obj)),{reliable:true}); }catch(e){} }
