@@ -610,7 +610,7 @@ function ring(pct,color,size=120,sw=13){
 }
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);try{save();}catch(e){}}
 let curScreen=null;
-const REFRESH_ON_SHOW=['home','piano','nutriplan','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge','ricette','salute','dirette','community','notifiche'];
+const REFRESH_ON_SHOW=['home','piano','nutriplan','prenota','diario','digiuno','pro','profilo','detox','storia','benessere','allenamento','addfood','scanner','ciclo','planning','shop','admin','ordini','privacy','clientchat','clientplans','score','percorso','ricerca','sfide','badge','ricette','salute','dirette','community','notifiche','disponibilita'];
 function go(id){
   const changing = curScreen!==id;
   if(changing && REFRESH_ON_SHOW.includes(id) && BUILDERS[id] && document.getElementById('sc-'+id)){ rebuild(id); }
@@ -655,6 +655,7 @@ function cloudInit(){
 function cloudOn(){ return !!SB; }
 function loggedIn(){ return !!cloudUser; }
 const OWNER_EMAIL="aurea.wellness.app@gmail.com";
+const APP_VERSION="v59";
 const POLICY_VERSION="2026-07-01"; // aggiornare a ogni modifica di Termini/Privacy
 function isAdmin(){ return !!(cloudUser && (cloudUser.email||'').toLowerCase()===OWNER_EMAIL); }
 // registro consensi (tracciabilità GDPR)
@@ -1207,7 +1208,8 @@ const MENU=[
 ];
 function renderMenu(){
   const g=document.getElementById('menu-grid'); if(!g)return;
-  g.innerHTML=MENU.filter(m=>!(m.fem&&!cycleOn())).filter(m=>!(m.usr&&isProMode())).map(m=>
+  const ADMIN_HIDE=['nutriplan','clientplans','ciclo'];
+  g.innerHTML=MENU.filter(m=>!(m.fem&&!cycleOn())).filter(m=>!(m.usr&&isProMode())).filter(m=>!(isAdmin()&&ADMIN_HIDE.includes(m.id))).map(m=>
     `<button class="qa" onclick="menuGo('${m.id}')"><span class="qi" style="background:var(--mint);color:var(--green-d)">${ic(m.icn,24)}</span>${m.l}</button>`
   ).join('');
 }
@@ -1523,11 +1525,11 @@ function homeHTML(){
 
   ${cycleOn()?`<div class="banner gp" onclick="go('ciclo')" style="margin-top:16px;cursor:pointer"><span class="b-ic">🌸</span><h4>Il tuo ciclo</h4><p>Tocca per seguire il ciclo e le sue fasi.</p></div>`:''}
 
-  <div class="section-title">Lavori nel benessere?</div>
+  ${!isAdmin()?`<div class="section-title">Lavori nel benessere?</div>
   <div class="card"><div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('shield',22)}</div><div class="rt"><b>Diventa professionista</b><small>Registrati e lavora su Aur\u00e9a: agenda, clienti, dirette</small></div><div class="rv">\u203a</div></div></div>
 
   <div class="section-title">Integratori consigliati</div>
-  ${suppRecoCard('Selezionati per te','Scopri gli integratori consigliati dai professionisti:','home')}
+  ${suppRecoCard('Selezionati per te','Scopri gli integratori consigliati dai professionisti:','home')}`:''}
   `;
 }
 function renderHomeAppts(){
@@ -2328,7 +2330,8 @@ function openBooking(name,spec,ic,proId){
 function setBookMode(m){ S._bk.mode=m; drawBooking(); }
 function drawBooking(){
   const bk=S._bk; if(!bk)return;
-  let avail=docAvail(bk.name).map(d=>({...d,times:d.times.filter(t=>!slotTaken(bk.name,d.date,t))})).filter(d=>d.times.length);
+  const wantMode=(bk.mode==='In studio')?'studio':'video';
+  let avail=docAvail(bk.name).map(d=>({...d,times:normTimes(d.times).filter(s=>(slotMode(s)===wantMode||slotMode(s)==='both')&&!slotTaken(bk.name,d.date,slotTime(s))).map(slotTime)})).filter(d=>d.times.length);
   const box=document.createElement('div'); box.id='book-panel'; box.style.cssText='position:absolute;inset:0;z-index:60;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
   let body;
   if(!avail.length){ body=`<div style="text-align:center;padding:24px 8px"><div style="font-size:40px">📅</div><div class="sub">Nessuna disponibilità al momento. Riprova più tardi.</div></div>`; }
@@ -2903,6 +2906,7 @@ function proDashHTML(){
 
   <div class="banner gg"><span class="b-ic">${s.ic||'🎓'}</span><h4>${s.profession}</h4><p>${s.status==='verificato'?'Profilo verificato e attivo. Gestisci qui la tua attività.':(s.status==='in_verifica'?'Verifica dei titoli in corso…':'Verifica da completare: ricarica i documenti dalla tua scheda.')}</p></div>
   ${s.status!=='verificato'?`<div class="alert ${s.status==='in_verifica'?'info':'warn'}" onclick="go('pro')" style="cursor:pointer"><span>${s.status==='in_verifica'?'⏳':'📄'}</span><div>${s.status==='in_verifica'?'Sei registrato come professionista. Appena verificato comparirai in "Prenota" e potrai pubblicare.':'Non abbiamo potuto verificare automaticamente: tocca per ricontrollare i dati e ricaricare il certificato.'} Il tuo profilo resta salvato finché non lo ritiri.</div></div>`:''}
+  ${!((s.avail||[]).some(d=>normTimes(d.times).length))?`<div class="alert warn" onclick="go('pro')" style="cursor:pointer;border:2px solid var(--amber)"><span>📅</span><div><b>Imposta le tue disponibilità.</b> Senza giorni e orari i clienti non possono prenotarti. Tocca per aggiungerli — puoi distinguere gli orari in videochiamata da quelli in studio.</div></div>`:''}
 
   <div class="grid2" style="margin-bottom:8px">
     <div class="stat" style="cursor:default"><div class="ico" style="background:#e8f1ff;color:var(--blue)">${ic('calendar',20)}</div><div class="v">${S.appointments.length}</div><div class="l">Appuntamenti</div></div>
@@ -2912,7 +2916,7 @@ function proDashHTML(){
   <div class="section-title">La tua attività</div>
   <div class="card tight">
     <div class="row" onclick="go('prenota')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:#e8f1ff;color:var(--blue)">${ic('calendar',22)}</div><div class="rt"><b>Agenda & appuntamenti</b><small>vedi e gestisci le prenotazioni dei clienti</small></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('pro')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--violet-s);color:var(--violet)">${ic('clock',22)}</div><div class="rt"><b>Disponibilità</b><small>imposta i giorni e gli orari in cui ricevi</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('disponibilita')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--violet-s);color:var(--violet)">${ic('clock',22)}</div><div class="rt"><b>Disponibilità</b><small>giorni e orari: 💻 videochiamata e 🏥 in studio</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('clientchat')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('users',22)}</div><div class="rt"><b>Chat con i clienti</b><small>rispondi ai messaggi dei tuoi clienti</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('clientplans')" style="cursor:pointer;padding:9px 0;border-bottom:none"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('clipboard',22)}</div><div class="rt"><b>Documenti inviati ai clienti</b><small>piani, schede, routine e note</small></div><div class="rv">›</div></div>
   </div>
@@ -2930,14 +2934,23 @@ function proDashHTML(){
     })()}
   </div>
 
-  <div class="section-title">Il tuo profilo pubblico</div>
-  <div class="card tight">
-    <div class="row" onclick="go('pro')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('shield',22)}</div><div class="rt"><b>Scheda, prodotti consigliati e recensioni</b><small>gestisci come ti vedono i clienti</small></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('prenota')" style="cursor:pointer;padding:9px 0;border-bottom:none"><div class="ri" style="background:#e8f1ff;color:var(--blue)">${ic('user',22)}</div><div class="rt"><b>Vedi come appari ai clienti</b></div><div class="rv">›</div></div>
-  </div>
-
-  <div class="tiny" style="margin-top:10px">Sei registrato come professionista: questa è la tua area di lavoro. Puoi ritirare il profilo dalla tua scheda in "Professionisti".</div>
+  <div class="tiny" style="margin-top:10px">Sei registrato come professionista: questa è la tua area di lavoro. Puoi ritirare il profilo e gestire prodotti consigliati e recensioni dalla tua scheda in "Profilo".</div>
+  <div class="tiny" style="text-align:center;font-weight:700;color:var(--green-d);margin-top:6px">Auréa · ${APP_VERSION}</div>
   `;
+}
+function disponibilitaHTML(){
+  if(!S.pro) return `<button class="back" onclick="go('home')">← Home</button><div class="card"><div class="sub">Solo i professionisti gestiscono le disponibilità.</div></div>`;
+  const nSlot=((S.pro.avail||[]).reduce((a,d)=>a+normTimes(d.times).length,0));
+  return `<button class="back" onclick="go('home')">← Home</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Quando ricevi</div><div class="n">📅 Le tue disponibilità</div></div></div>
+  <button class="btn" style="background:var(--green);box-shadow:none;font-size:15px;margin-bottom:12px" onclick="proAddDate()">＋ Aggiungi un giorno disponibile</button>
+  <div class="card" style="border:2px solid var(--green);box-shadow:0 4px 18px rgba(45,140,90,.12)">
+    <div class="h" style="font-size:16px">📅 Giorni e orari <span style="float:right;font-size:12px;color:var(--green-d);background:var(--mint);padding:3px 10px;border-radius:12px">${nSlot} orari</span></div>
+    <div class="sub" style="margin-bottom:12px">Scegli un giorno, poi aggiungi gli orari distinguendo <b>💻 videochiamata</b> e <b>🏥 in studio</b>. Ogni orario è salvato e <b>pubblicato subito</b>: i clienti lo vedono in fase di prenotazione (solo gli orari del tipo di visita che scelgono).</div>
+    <div id="pro-avail"></div>
+    <button class="btn sec" style="margin-top:12px" onclick="proAddDate()">＋ Aggiungi un altro giorno</button>
+  </div>
+  ${nSlot?`<div class="alert ok" style="margin-top:12px"><span>✅</span><div><b>${nSlot} ${nSlot===1?'orario pubblicato':'orari pubblicati'}.</b> Sei prenotabile dai clienti.</div></div>`:''}`;
 }
 function deleteWorkout(id){ confirmBox('Eliminare questo video di allenamento?',async()=>{
   if(cloudOn()){ const {error}=await cloudDeleteWorkout(id); if(error){toast('Non eliminato: '+(error.message||error));return;} _wkLoaded=false; await cloudLoadWorkouts(); _wkLoaded=true; }
@@ -3060,7 +3073,7 @@ function renderPlans(){ const c=document.getElementById('plans-list'); if(!c)ret
   if(!(cloudOn()&&loggedIn())){ c.innerHTML='<div class="card" style="text-align:center"><div class="sub">Accedi per vedere i documenti.</div></div>'; return; }
   cloudLoadPlans().then(rows=>{ c.innerHTML=rows.length?rows.map(pl=>{ const km=planKindMeta(pl.kind); return `<div class="card">
     <div class="h">${km[0]} ${pl.title||km[1]}</div>
-    <div class="sub" style="margin-bottom:6px">${km[1]} · ${isProMode()?'Per: <b>'+(pl.client_email||'—')+'</b>':'Da: <b>'+(pl.pro_name||'professionista')+'</b>'} · ${(pl.created_at||'').slice(0,10)}</div>
+    <div class="sub" style="margin-bottom:6px">${km[1]} · ${isProMode()?'Per: <b>'+((pl.client_name||pl.client_email||'—')+'')+'</b>':'Da: <b>'+(pl.pro_name||'professionista')+'</b>'} · ${(pl.created_at||'').slice(0,10)}</div>
     <div class="sub" style="white-space:pre-wrap">${(pl.content||'').replace(/</g,'&lt;')}</div>
     ${isProMode()?`<button class="btn sm sec" style="margin-top:10px;width:auto;padding:7px 12px" onclick="delClientPlan('${pl.id}')">🗑 Elimina</button>`:''}
   </div>`; }).join(''):`<div class="card" style="text-align:center"><div style="font-size:40px">📋</div><div class="sub">${isProMode()?'Ancora nessun documento inviato.':'Nessun documento ricevuto per ora.'}</div></div>`; });
@@ -3080,12 +3093,37 @@ function generatePlanText(pt){
   S.nutri=saved;
   return out;
 }
+// Selettore cliente in-app: invia direttamente sull'account dell'utente (niente email)
+let __pcSel=null;
+function pickClient(onPick){
+  if(!(cloudOn()&&loggedIn())){toast('Accedi per inviare ai clienti');go('cloud');return;}
+  const box=modalSheet(`<div class="grab"></div>
+    <h3 style="text-align:center;margin:0 0 4px;font-size:17px">Scegli il cliente</h3>
+    <div class="sub" style="text-align:center;margin-bottom:12px">Il documento arriva direttamente sull'account dell'utente in Auréa, nella sua sezione "I miei documenti", con notifica.</div>
+    <div class="field"><input id="pc-q" placeholder="🔍 Cerca un utente per nome…" autocomplete="off"></div>
+    <div id="pc-list" style="max-height:52vh;overflow-y:auto"><div class="sub" style="text-align:center;padding:16px">Caricamento contatti…</div></div>
+    <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Annulla</button>`);
+  const listEl=box.querySelector('#pc-list'), qEl=box.querySelector('#pc-q');
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const render=(q)=>{
+    q=(q||'').trim().toLowerCase();
+    const seen={}, items=[];
+    (typeof chatThreads==='function'?chatThreads():[]).forEach(t=>{ if(t&&t.id&&!seen[t.id]){seen[t.id]=1; items.push({id:t.id,name:t.name||'Cliente',recent:true});} });
+    (DIRECTORY||[]).forEach(u=>{ if(u&&u.id&&u.name&&!seen[u.id]&&!(cloudUser&&u.id===cloudUser.id)){seen[u.id]=1; items.push({id:u.id,name:u.name});} });
+    const f=items.filter(u=>!q||u.name.toLowerCase().includes(q));
+    if(!f.length){ listEl.innerHTML='<div class="sub" style="text-align:center;padding:16px">Nessun utente trovato. Gli utenti compaiono qui dopo essersi iscritti.</div>'; return; }
+    listEl.innerHTML=f.slice(0,60).map((u,i)=>`<div class="row" data-i="${i}" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--mint);overflow:hidden;padding:0">${AVATARS[u.id]?avFill(AVATARS[u.id]):esc((u.name||'?').slice(0,1).toUpperCase())}</div><div class="rt" style="flex:1"><b>${esc(u.name)}</b>${u.recent?'<small>già in contatto con te</small>':''}</div><div class="rv">›</div></div>`).join('');
+    listEl.querySelectorAll('.row[data-i]').forEach(el=>{ el.onclick=()=>{ const u=f[+el.getAttribute('data-i')]; box.remove(); onPick({id:u.id,name:u.name}); }; });
+  };
+  qEl.oninput=()=>render(qEl.value);
+  if(_dirLoaded){ render(''); } else { render(''); cloudLoadDirectory().then(()=>{_dirLoaded=true; render(qEl.value);}); }
+}
 function addClientPlan(){ if(!canPlan()){toast('Non abilitato ai piani nutrizionali');return;}
-  openForm({title:'Nuovo piano nutrizionale',subtitle:'Inserisci i dati del paziente: il piano si genera in automatico',
+  pickClient((cli)=>{
+  openForm({title:'Nuovo piano nutrizionale',subtitle:'Per '+cli.name+' · inserisci i dati: il piano si genera in automatico',
     fields:[
       {id:'title',label:'Titolo del piano',ph:'es. Piano dimagrimento 4 settimane'},
-      {id:'email',label:'Email del paziente (per riceverlo)'},
-      {id:'pname',label:'Nome del paziente'},
+      {id:'pname',label:'Nome del paziente',value:cli.name},
       {id:'sex',label:'Sesso',type:'select',options:['Donna','Uomo']},
       {id:'age',label:'Età',type:'number'},
       {id:'h',label:'Altezza (cm)',type:'number'},
@@ -3098,25 +3136,29 @@ function addClientPlan(){ if(!canPlan()){toast('Non abilitato ai piani nutrizion
       {id:'health',label:'Dati di salute del paziente',type:'textarea',ph:'Patologie, farmaci, valori, note cliniche…'},
       {id:'notes',label:'Note e indicazioni del professionista',type:'textarea',ph:'Aggiustamenti, integrazione, consigli…'}
     ],
-    submit:'Genera e invia',
+    submit:'Genera e invia a '+cli.name,
     onSubmit:async(v)=>{
       if(!v.title||!v.title.trim()){toast('Inserisci il titolo');return false;}
-      if(!v.email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())){toast('Email paziente non valida');return false;}
       const age=parseInt(v.age),h=parseFloat(v.h),w=parseFloat(v.w);
       if(!age||!h||!w){toast('Inserisci età, altezza e peso del paziente');return false;}
       const pt={sex:v.sex==='Uomo'?'M':'F',age,h,w,act:v.act,goal:v.goal,pace:v.pace,dietLbl:v.diet,exclude:(v.exclude||'').split(',').map(s=>s.trim()).filter(Boolean)};
-      const head='PAZIENTE: '+((v.pname||'').trim()||'—')+' · '+(v.sex||'')+' · '+age+' anni · '+h+' cm · '+w+' kg\n'
+      const head='PAZIENTE: '+((v.pname||'').trim()||cli.name||'—')+' · '+(v.sex||'')+' · '+age+' anni · '+h+' cm · '+w+' kg\n'
         +'Attività: '+v.act+' · Obiettivo: '+v.goal+' · Regime: '+v.diet+(pt.exclude.length?(' · senza '+pt.exclude.join(', ')):'')+'\n'
         +((v.health||'').trim()?('DATI DI SALUTE: '+(v.health||'').trim()+'\n'):'')+'\n';
       const body=generatePlanText(pt);
       const notes=(v.notes||'').trim()?('\nNOTE DEL PROFESSIONISTA:\n'+(v.notes||'').trim()):'';
       const content=head+body+notes;
-      try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:v.title.trim(),content:content,kind:'piano'}); renderPlans(); toast('Piano generato e inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; }
+      try{ await cloudSendPlan({client_id:cli.id,client_name:cli.name,title:v.title.trim(),content:content,kind:'piano'}); renderPlans(); toast('Piano inviato a '+cli.name+' ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; }
     }
+  });
   });
 }
 /* ===== Strumenti per ruolo del professionista ===== */
-async function cloudSendPlan(row){ const base=Object.assign({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name},row); let {error}=await SB.from('plans').insert(base); if(error&&/column|kind|schema cache|could not find/i.test(error.message||'')){ const b2=Object.assign({},base); delete b2.kind; const r=await SB.from('plans').insert(b2); error=r.error; } if(error)throw error; }
+async function cloudSendPlan(row){ const base=Object.assign({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name},row);
+  let {error}=await SB.from('plans').insert(base);
+  if(error&&/column|kind|client_id|client_name|schema cache|could not find/i.test(error.message||'')){ const b2=Object.assign({},base); delete b2.kind; delete b2.client_id; delete b2.client_name; const r=await SB.from('plans').insert(b2); error=r.error; if(error)throw new Error('Manca l\'aggiornamento SQL della tabella "plans" (client_id): esegui lo script che ti ho dato. Dettaglio: '+(error.message||error)); }
+  if(error)throw error;
+  if(base.client_id){ try{ cloudNotify(base.client_id,'plan',{text:base.title||'Nuovo documento'}); }catch(e){} } }
 function proTools(){ const p=((S.pro&&S.pro.profession)||'').toLowerCase(); const s=new Set();
   if(/nutrizionist|dietist|biolog|diabetolog|endocrinolog/.test(p)) s.add('piano');
   if(/dermatolog|estetic|diabetolog|endocrinolog|ginecolog/.test(p)) s.add('prodotti');
@@ -3126,29 +3168,30 @@ function proTools(){ const p=((S.pro&&S.pro.profession)||'').toLowerCase(); cons
   if(isAdmin()){ ['piano','prodotti','allenamento','note','vendita'].forEach(x=>s.add(x)); }
   if(!s.size) s.add('note');
   return s; }
-function addClientProgram(){ openForm({title:'Scheda di allenamento',subtitle:'Per il singolo cliente',
-  fields:[{id:'email',label:'Email del cliente'},{id:'title',label:'Titolo',ph:'es. Scheda forza · 4 settimane'},{id:'content',label:'Programma (esercizi · serie · ripetizioni)',type:'textarea',ph:'Giorno A — Squat 4x8, Panca 4x10…\nGiorno B — …'}],
-  submit:'Invia al cliente',
-  onSubmit:async(v)=>{ if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((v.email||'').trim())){toast('Email cliente non valida');return false;} if(!(v.content||'').trim()){toast('Inserisci il programma');return false;}
-    try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:(v.title||'Scheda allenamento').trim(),content:v.content.trim(),kind:'allenamento'}); if(curScreen==='clientplans')renderPlans(); toast('Scheda inviata ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }
-function addClientNote(){ openForm({title:'Note e consigli',subtitle:'Inviati al cliente',
-  fields:[{id:'email',label:'Email del cliente'},{id:'title',label:'Titolo',ph:'es. Indicazioni post-visita'},{id:'content',label:'Testo',type:'textarea',ph:'Consigli, indicazioni, percorso tra gli incontri…'}],
-  submit:'Invia',
-  onSubmit:async(v)=>{ if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((v.email||'').trim())){toast('Email cliente non valida');return false;} if(!(v.content||'').trim()){toast('Scrivi qualcosa');return false;}
-    try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:(v.title||'Note').trim(),content:v.content.trim(),kind:'note'}); if(curScreen==='clientplans')renderPlans(); toast('Inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }
+function addClientProgram(){ pickClient((cli)=>{ openForm({title:'Scheda di allenamento',subtitle:'Per '+cli.name,
+  fields:[{id:'title',label:'Titolo',ph:'es. Scheda forza · 4 settimane'},{id:'content',label:'Programma (esercizi · serie · ripetizioni)',type:'textarea',ph:'Giorno A — Squat 4x8, Panca 4x10…\nGiorno B — …'}],
+  submit:'Invia a '+cli.name,
+  onSubmit:async(v)=>{ if(!(v.content||'').trim()){toast('Inserisci il programma');return false;}
+    try{ await cloudSendPlan({client_id:cli.id,client_name:cli.name,title:(v.title||'Scheda allenamento').trim(),content:v.content.trim(),kind:'allenamento'}); if(curScreen==='clientplans')renderPlans(); toast('Scheda inviata a '+cli.name+' ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }); }
+function addClientNote(){ pickClient((cli)=>{ openForm({title:'Note e consigli',subtitle:'Per '+cli.name,
+  fields:[{id:'title',label:'Titolo',ph:'es. Indicazioni post-visita'},{id:'content',label:'Testo',type:'textarea',ph:'Consigli, indicazioni, percorso tra gli incontri…'}],
+  submit:'Invia a '+cli.name,
+  onSubmit:async(v)=>{ if(!(v.content||'').trim()){toast('Scrivi qualcosa');return false;}
+    try{ await cloudSendPlan({client_id:cli.id,client_name:cli.name,title:(v.title||'Note').trim(),content:v.content.trim(),kind:'note'}); if(curScreen==='clientplans')renderPlans(); toast('Inviato a '+cli.name+' ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }); }
 function sendClientProducts(){ const prods=allProducts(); if(!prods.length){ toast('Catalogo vuoto: aggiungi prima i prodotti nello shop'); return; }
-  const box=modalSheet(`<div class="grab"></div><h3 style="text-align:center;margin:0 0 4px;font-size:17px">Consiglia prodotti</h3><div class="sub" style="text-align:center;margin-bottom:12px">Seleziona i prodotti adatti al cliente</div>
-    <div class="field"><label>Email del cliente</label><input id="rt-email" placeholder="cliente@email.com"></div>
+  pickClient((cli)=>{
+  const box=modalSheet(`<div class="grab"></div><h3 style="text-align:center;margin:0 0 4px;font-size:17px">Consiglia prodotti</h3><div class="sub" style="text-align:center;margin-bottom:12px">Per <b>${(cli.name||'').replace(/</g,'&lt;')}</b> · seleziona i prodotti adatti</div>
     <div class="field"><label>Titolo</label><input id="rt-title" value="Routine consigliata"></div>
     <div style="max-height:36vh;overflow-y:auto;margin-bottom:10px">${prods.map((p,i)=>`<label class="row" style="cursor:pointer;padding:8px 0"><input type="checkbox" class="rt-p" value="${i}" style="width:18px;height:18px;margin-right:8px;flex:0 0 18px"><div class="ri" style="background:${p.bg||'var(--mint)'};overflow:hidden;padding:0">${p.img?`<img src="${p.img}" style="width:100%;height:100%;object-fit:cover">`:(p.ic||'💊')}</div><div class="rt" style="flex:1"><b>${p.n}</b><small>€${(+p.p).toFixed(2)}</small></div></label>`).join('')}</div>
     <div class="field"><label>Come usarli (mattina/sera, note)</label><textarea id="rt-note" rows="2" style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:none" placeholder="es. Detergente mattina e sera, crema idratante la sera…"></textarea></div>
-    <button class="btn" id="rt-send">Invia al cliente</button>
+    <button class="btn" id="rt-send">Invia a ${(cli.name||'').replace(/</g,'&lt;')}</button>
     <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Annulla</button>`);
-  box.querySelector('#rt-send').onclick=async()=>{ const email=(box.querySelector('#rt-email').value||'').trim().toLowerCase(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){toast('Email non valida');return;}
+  box.querySelector('#rt-send').onclick=async()=>{
     const sel=[...box.querySelectorAll('.rt-p:checked')].map(c=>prods[+c.value]).filter(Boolean); if(!sel.length){toast('Seleziona almeno un prodotto');return;}
     const title=(box.querySelector('#rt-title').value||'Routine consigliata').trim(); const note=(box.querySelector('#rt-note').value||'').trim();
     const content='PRODOTTI CONSIGLIATI:\n'+sel.map(p=>'• '+p.n+' — €'+(+p.p).toFixed(2)).join('\n')+(note?('\n\nCome usarli:\n'+note):'');
-    try{ await cloudSendPlan({client_email:email,title:title,content:content,kind:'routine'}); box.remove(); toast('Inviato al cliente ✓'); if(curScreen==='clientplans')renderPlans(); }catch(e){ toast('Errore: '+((e&&e.message)||e)); } };
+    try{ await cloudSendPlan({client_id:cli.id,client_name:cli.name,title:title,content:content,kind:'routine'}); box.remove(); toast('Inviato a '+cli.name+' ✓'); if(curScreen==='clientplans')renderPlans(); }catch(e){ toast('Errore: '+((e&&e.message)||e)); } };
+  });
 }
 function planKindMeta(k){ return ({piano:['🥗','Piano nutrizionale'],routine:['🧴','Prodotti / routine'],allenamento:['💪','Scheda allenamento'],note:['📝','Note e consigli']})[k]||['📋','Documento']; }
 function delClientPlan(id){ confirmBox('Eliminare questo documento?',async()=>{ try{ await SB.from('plans').delete().eq('id',id); renderPlans(); toast('Eliminato'); }catch(e){ toast('Errore: '+(e.message||e)); } },{icon:'📋',yes:'Elimina',danger:true}); }
@@ -3655,24 +3698,26 @@ function profiloHTML(){
     <div class="tiny" style="margin-top:2px;cursor:pointer" onclick="changeAvatar()">${S.user.avatar?'Cambia foto profilo':'Aggiungi una foto profilo'}</div>
   </div>
 
-  <div class="card">
+  ${isAdmin()?`<div class="card" onclick="go('admin')" style="cursor:pointer;background:linear-gradient(120deg,#fff0e0,#fff)"><div class="row"><div class="ri" style="background:#fff;color:#c8781f">🛠️</div><div class="rt" style="flex:1"><b>Pannello di gestione</b><small>professionisti, verifiche, prodotti e contenuti</small></div><div class="rv">›</div></div></div>`:''}
+
+  ${(!isAdmin()&&!isProMode())?`<div class="card">
     <div class="h">🎯 Obiettivo</div>
     <div class="seg" id="goal-seg">${["Dimagrimento","Mantenimento","Massa","Benessere"].map((g,i)=>`<button class="${g===S.user.goal?'on':''}" onclick="setGoal('${g}')">${g}</button>`).join('')}</div>
     <div class="sub" style="margin-top:8px">Cambiando obiettivo si riadattano automaticamente sia il piano alimentare (calorie e macro) sia gli allenamenti.</div>
-  </div>
+  </div>`:''}
 
   <div class="card tight">
-    ${S.user.sex!=='M'?`<div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--coral-s)">🌸</div><div class="tt"><b>Monitoraggio ciclo</b><small>Salute femminile & ormonale</small></div><div class="switch ${S.cycleTracking!==false?'on':''}" onclick="toggleCycleTracking(this)"><i></i></div></div>`:''}
+    ${(!isAdmin()&&S.user.sex!=='M')?`<div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--coral-s)">🌸</div><div class="tt"><b>Monitoraggio ciclo</b><small>Salute femminile & ormonale</small></div><div class="switch ${S.cycleTracking!==false?'on':''}" onclick="toggleCycleTracking(this)"><i></i></div></div>`:''}
     <div class="tog"><div class="ri" style="width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--mint)">🔔</div><div class="tt"><b>Notifiche</b><small>Promemoria & consigli</small></div><div class="switch ${S.notif!==false?'on':''}" onclick="toggleNotif(this)"><i></i></div></div>
   </div>
 
   <div class="card tight">
-    <div class="row" onclick="go('badge')" style="cursor:pointer"><div class="ri" style="background:#fff0e0;color:#c8781f">${ic('shield',22)}</div><div class="rt"><b>Livello & Badge</b><small>livello ${levelInfo().lvl} · più usi Auréa, più sali · ${(S.badges||[]).length} badge</small></div><div class="rv">›</div></div>
+    ${!isAdmin()?`<div class="row" onclick="go('badge')" style="cursor:pointer"><div class="ri" style="background:#fff0e0;color:#c8781f">${ic('shield',22)}</div><div class="rt"><b>Livello & Badge</b><small>livello ${levelInfo().lvl} · più usi Auréa, più sali · ${(S.badges||[]).length} badge</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('sfide')" style="cursor:pointer"><div class="ri" style="background:var(--coral-s);color:var(--coral)">${ic('flame',22)}</div><div class="rt"><b>Sfide</b><small>partecipa e sblocca traguardi</small></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--violet-s)">🎓</div><div class="rt"><b>${S.pro?'Il mio profilo professionista':'Diventa professionista'}</b><small>${S.pro?(S.pro.status==='verificato'?'verificato ✔️':'in verifica ⏳'):'nutrizionista, medico, PT…'}</small></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('pro')" style="cursor:pointer"><div class="ri" style="background:var(--violet-s)">🎓</div><div class="rt"><b>${S.pro?'Il mio profilo professionista':'Diventa professionista'}</b><small>${S.pro?(S.pro.status==='verificato'?'verificato ✔️':'in verifica ⏳'):'nutrizionista, medico, PT…'}</small></div><div class="rv">›</div></div>`:''}
     <div class="row" onclick="go('cloud')" style="cursor:pointer"><div class="ri" style="background:#e8f1ff">☁️</div><div class="rt"><b>${loggedIn()?'Account cloud':'Attiva modalità reale'}</b><small>${loggedIn()?(cloudUser.email):'account veri + video reali'}</small></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('prenota')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">🩺</div><div class="rt"><b>Le mie visite</b></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('ordini')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📦</div><div class="rt"><b>I miei ordini</b></div><div class="rv">›</div></div>
+    ${!isAdmin()?`<div class="row" onclick="go('prenota')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">🩺</div><div class="rt"><b>Le mie visite</b></div><div class="rv">›</div></div>
+    <div class="row" onclick="go('ordini')" style="cursor:pointer"><div class="ri" style="background:var(--mint)">📦</div><div class="rt"><b>I miei ordini</b></div><div class="rv">›</div></div>`:''}
     <div class="row" onclick="go('termini')" style="cursor:pointer"><div class="ri" style="background:var(--coral-s)">⚖️</div><div class="rt"><b>Termini e responsabilità</b><small>ruolo di Auréa e responsabilità</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('privacy')" style="cursor:pointer"><div class="ri" style="background:#e8f1ff">🔒</div><div class="rt"><b>Privacy</b><small>come trattiamo i tuoi dati</small></div><div class="rv">›</div></div>
     ${isAdmin()?`<div class="row" onclick="go('admin')" style="cursor:pointer"><div class="ri" style="background:#fff0e0">🛠️</div><div class="rt"><b>Pannello admin</b><small>gestisci professionisti e prodotti</small></div><div class="rv">›</div></div>`:''}
@@ -3684,7 +3729,7 @@ function profiloHTML(){
   </div>
 
   <button class="btn sec" onclick="logout()">Esci / cambia profilo</button>
-  <div class="tiny">Auréa · v1.0 · Il benessere che si prende cura di te</div>
+  <div class="tiny" style="font-weight:700;color:var(--green-d)">Auréa · ${APP_VERSION} · Il benessere che si prende cura di te</div>
   `;
 }
 
@@ -4116,12 +4161,13 @@ async function cloudNotify(userId,type,extra){ if(!cloudOn()||!cloudUser||!userI
 async function cloudLoadNotifs(){ if(!cloudOn()||!cloudUser){NOTIFS=[];NOTIF_UNREAD=0;return [];} try{ const {data,error}=await SB.from('notifications').select('*').eq('user_id',cloudUser.id).order('created_at',{ascending:false}).limit(60); if(error)throw error; NOTIFS=data||[]; NOTIF_UNREAD=NOTIFS.filter(n=>!n.read).length; return NOTIFS; }catch(e){ return NOTIFS; } }
 async function cloudMarkNotifsRead(){ if(!cloudOn()||!cloudUser||!NOTIF_UNREAD)return; try{ await SB.from('notifications').update({read:true}).eq('user_id',cloudUser.id).eq('read',false); NOTIFS.forEach(n=>n.read=true); NOTIF_UNREAD=0; }catch(e){} }
 function updateNotifBadge(){ if(!(cloudOn()&&loggedIn()))return; cloudLoadNotifs().then(()=>{ document.querySelectorAll('.notif-badge').forEach(b=>{ b.style.display=NOTIF_UNREAD?'flex':'none'; b.textContent=NOTIF_UNREAD>9?'9+':NOTIF_UNREAD; }); }); }
-function notifIcon(t){ return t==='like'?'❤️':t==='comment'?'💬':t==='follow'?'👤':'✉️'; }
+function notifIcon(t){ return t==='like'?'❤️':t==='comment'?'💬':t==='follow'?'👤':t==='plan'?'📋':'✉️'; }
 function notifText(n){ const a=`<b>${(n.actor_name||'Qualcuno').replace(/</g,'&lt;')}</b>`;
   if(n.type==='like')return `${a} ha messo mi piace al tuo post`;
   if(n.type==='comment')return `${a} ha commentato: "${(n.text||'').replace(/</g,'&lt;').slice(0,60)}"`;
   if(n.type==='follow')return `${a} ha iniziato a seguirti`;
   if(n.type==='message')return `${a} ti ha inviato un messaggio`;
+  if(n.type==='plan')return `${a} ti ha inviato un documento: "${(n.text||'').replace(/</g,'&lt;').slice(0,60)}"`;
   return a; }
 function notificheHTML(){
   if(!(cloudOn()&&loggedIn())) return `<button class="back" onclick="go('home')">← Home</button><div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Attività</div><div class="n">🔔 Notifiche</div></div></div><div class="card" style="text-align:center"><div class="sub">Accedi per vedere le notifiche.</div></div>`;
@@ -4131,10 +4177,10 @@ function notificheHTML(){
 }
 function renderNotifs(){ const c=document.getElementById('notif-list'); if(!c)return;
   cloudLoadNotifs().then(list=>{
-    c.innerHTML=list.length?list.map(n=>`<div class="row" style="padding:11px 8px;margin-bottom:4px;${n.read?'':'background:var(--mint);border-radius:13px'}"${n.type==='message'?` onclick="go('clientchat')" style="cursor:pointer"`:(n.post_id?` onclick="go('community')" style="cursor:pointer"`:'')}>
+    c.innerHTML=list.length?list.map(n=>{ const nav=n.type==='message'?'clientchat':(n.type==='plan'?'clientplans':(n.post_id?'community':(n.type==='follow'?'community':''))); return `<div class="row" style="padding:11px 8px;margin-bottom:4px;cursor:${nav?'pointer':'default'};${n.read?'':'background:var(--mint);border-radius:13px'}"${nav?` onclick="go('${nav}')"`:''}>
         <div class="ri" style="background:var(--soft)">${notifIcon(n.type)}</div>
         <div class="rt" style="flex:1"><small style="white-space:normal;color:var(--ink);font-size:13px">${notifText(n)}</small><small style="color:var(--muted)">${timeAgo(n.created_at)}</small></div>
-      </div>`).join(''):'<div class="card" style="text-align:center"><div style="font-size:42px">🔔</div><div class="sub">Nessuna notifica per ora. Quando qualcuno mette mi piace, commenta, ti segue o ti scrive, lo vedrai qui.</div></div>';
+      </div>`; }).join(''):'<div class="card" style="text-align:center"><div style="font-size:42px">🔔</div><div class="sub">Nessuna notifica per ora. Quando qualcuno mette mi piace, commenta, ti segue o ti scrive, lo vedrai qui.</div></div>';
     cloudMarkNotifsRead().then(()=>{ document.querySelectorAll('.notif-badge').forEach(b=>b.style.display='none'); });
   });
 }
@@ -5269,17 +5315,27 @@ function docRecos(d){
   if(d.me) return (S.pro&&S.pro.recommends)||[];
   return d.recommends||[];
 }
+function slotTime(s){ return (s&&typeof s==='object')?s.t:s; }
+function slotMode(s){ return (s&&typeof s==='object')?(s.m||'both'):'both'; }
+function normTimes(times){ return (times||[]).map(s=>(s&&typeof s==='object')?{t:s.t,m:s.m||'both'}:{t:s,m:'both'}); }
 function renderProAvail(){
   const c=document.getElementById('pro-avail'); if(!c)return;
   const av=(S.pro&&S.pro.avail)||[];
-  if(!av.length){ c.innerHTML='<div class="sub">Nessuna disponibilità inserita. I pazienti non possono ancora prenotarti: aggiungi almeno un giorno.</div>'; return; }
-  c.innerHTML=av.map((d,di)=>`<div class="card tight" style="box-shadow:none;border:1px solid var(--line);margin-bottom:8px">
+  if(!av.length){ c.innerHTML='<div class="alert warn" style="margin:0"><span>📅</span><div>Non hai ancora inserito disponibilità: <b>i clienti non possono prenotarti</b>. Aggiungi almeno un giorno qui sotto.</div></div>'; return; }
+  const group=(d,di,mode)=>{ const raw=(d.times||[]); const idx=[]; raw.forEach((s,ti)=>{ if(slotMode(s)===mode||slotMode(s)==='both')idx.push({t:slotTime(s),ti}); });
+    const used=idx.map(x=>x.t);
+    const sid='pro-t'+(mode==='studio'?'s':'v')+'-'+di;
+    return `<div style="margin-top:8px">
+      <b style="font-size:12.5px">${mode==='studio'?'🏥 In studio':'💻 Videochiamata'}</b>
+      <div class="chips" style="margin-top:4px">${idx.length?idx.map(x=>`<button class="chip sel" onclick="proDelTime(${di},${x.ti})">${x.t} ✕</button>`).join(''):'<span class="sub" style="font-size:12px">nessun orario</span>'}</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+        <select id="${sid}" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:10px">${PRO_TIMES.filter(t=>!used.includes(t)).map(t=>`<option>${t}</option>`).join('')}</select>
+        <button class="btn sm sec" style="width:auto;padding:8px 12px" onclick="proAddTime(${di},'${mode}')">＋ Orario</button>
+      </div></div>`; };
+  c.innerHTML=av.map((d,di)=>`<div class="card tight" style="box-shadow:none;border:1px solid var(--line);margin-bottom:10px">
     <div class="h" style="font-size:14px">📅 ${d.label} <button onclick="proDelDate(${di})" style="float:right;background:none;border:none;color:var(--coral);font-size:15px;cursor:pointer">🗑</button></div>
-    <div class="chips" style="margin-top:6px">${(d.times||[]).map((t,ti)=>`<button class="chip sel" onclick="proDelTime(${di},${ti})">${t} ✕</button>`).join('')||'<span class="sub">nessun orario</span>'}</div>
-    <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
-      <select id="pro-t-${di}" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:10px">${PRO_TIMES.filter(t=>!(d.times||[]).includes(t)).map(t=>`<option>${t}</option>`).join('')}</select>
-      <button class="btn sm sec" style="width:auto;padding:8px 12px" onclick="proAddTime(${di})">＋ Orario</button>
-    </div>
+    ${group(d,di,'video')}
+    ${group(d,di,'studio')}
   </div>`).join('');
 }
 function proAddDate(){
@@ -5295,9 +5351,9 @@ function proAddDate(){
       save(); renderProAvail(); toast('Giorno aggiunto: '+label); }
   });
 }
-function proDelDate(di){ S.pro.avail.splice(di,1); save(); renderProAvail(); }
-function proAddTime(di){ const sel=document.getElementById('pro-t-'+di); if(!sel||!sel.value)return; const t=sel.value; S.pro.avail[di].times=S.pro.avail[di].times||[]; if(!S.pro.avail[di].times.includes(t)){S.pro.avail[di].times.push(t); S.pro.avail[di].times.sort();} save(); renderProAvail(); }
-function proDelTime(di,ti){ S.pro.avail[di].times.splice(ti,1); save(); renderProAvail(); }
+function proDelDate(di){ S.pro.avail.splice(di,1); save(); renderProAvail(); if(curScreen==='disponibilita')rebuild('disponibilita'); }
+function proAddTime(di,mode){ mode=mode||'both'; const sid='pro-t'+(mode==='studio'?'s':'v')+'-'+di; const sel=document.getElementById(sid); if(!sel||!sel.value)return; const t=sel.value; S.pro.avail[di].times=normTimes(S.pro.avail[di].times); if(!S.pro.avail[di].times.some(s=>s.t===t&&s.m===mode)){S.pro.avail[di].times.push({t,m:mode}); S.pro.avail[di].times.sort((a,b)=>a.t<b.t?-1:1); toast((mode==='studio'?'🏥 In studio':'💻 Videochiamata')+' '+t+' · pubblicato ✓');} save(); renderProAvail(); if(curScreen==='disponibilita')rebuild('disponibilita'); }
+function proDelTime(di,ti){ S.pro.avail[di].times.splice(ti,1); save(); renderProAvail(); if(curScreen==='disponibilita')rebuild('disponibilita'); }
 function proStatusHTML(){
   const s=S.pro; const rev=docReviews(s.name);
   const avg=rev.length?(rev.reduce((a,b)=>a+b.stars,0)/rev.length):null;
@@ -5334,11 +5390,11 @@ function proStatusHTML(){
     <div id="pay-status"><div class="sub">Controllo stato…</div></div>
   </div>
 
-  <div class="card">
-    <div class="h">📅 Le tue disponibilità</div>
-    <div class="sub" style="margin-bottom:10px">Aggiungi i giorni e gli orari in cui i pazienti possono prenotarti. Compaiono nel loro calendario in fase di prenotazione.</div>
+  <div class="card" style="border:2px solid var(--green);box-shadow:0 4px 18px rgba(45,140,90,.12)">
+    <div class="h" style="font-size:16px">📅 Le tue disponibilità <span style="float:right;font-size:12px;color:var(--green-d);background:var(--mint);padding:3px 10px;border-radius:12px">${((S.pro.avail||[]).reduce((a,d)=>a+normTimes(d.times).length,0))} orari</span></div>
+    <div class="sub" style="margin-bottom:12px">Aggiungi i giorni e gli orari in cui i pazienti possono prenotarti. Per ogni giorno puoi distinguere gli orari di <b>💻 videochiamata</b> e quelli <b>🏥 in studio</b>: i clienti vedranno solo gli orari del tipo di visita che scelgono.</div>
     <div id="pro-avail"></div>
-    <button class="btn sec sm" style="margin-top:10px" onclick="proAddDate()">＋ Aggiungi un giorno disponibile</button>
+    <button class="btn" style="margin-top:12px;background:var(--green);box-shadow:none" onclick="proAddDate()">＋ Aggiungi un giorno disponibile</button>
   </div>
 
   <div class="card">
@@ -5540,7 +5596,7 @@ const BUILDERS={
   allenamento:allenamentoHTML, promemoria:promemoriaHTML, profilo:profiloHTML,
   planning:planningHTML, benessere:benessereHTML,
   community:communityHTML, frigo:frigoHTML, recupero:recuperoHTML,
-  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML, ricette:ricetteHTML, salute:saluteHTML, dirette:diretteHTML, notifiche:notificheHTML,
+  detox:detoxHTML, digiuno:digiunoHTML, storia:storiaHTML, pro:proHTML, cloud:cloudHTML, admin:adminHTML, termini:terminiHTML, privacy:privacyHTML, ordini:ordiniHTML, clientchat:clientchatHTML, clientplans:clientplansHTML, score:scoreHTML, percorso:percorsoHTML, ricerca:ricercaHTML, sfide:sfideHTML, badge:badgeHTML, ricette:ricetteHTML, salute:saluteHTML, dirette:diretteHTML, notifiche:notificheHTML, disponibilita:disponibilitaHTML,
   carrello:()=>''
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
@@ -5565,6 +5621,7 @@ function afterRender(id){
   if(id==='storia'){renderIntol();}
   if(id==='digiuno'){fastStatus();updateFastEnd();}
   if(id==='pro'){renderProAvail(); if(S.pro)renderPayStatus();}
+  if(id==='disponibilita'){renderProAvail();}
   if(id==='admin'){renderAdmin();}
   if(id==='ordini'){renderOrders();}
   if(id==='allenamento'){ if(cloudOn()&&!_wkLoaded&&!_wkFetching){ _wkFetching=true; cloudLoadWorkouts().then(()=>{ _wkLoaded=true; _wkFetching=false; if(curScreen==='allenamento')rebuild('allenamento'); }); } }
