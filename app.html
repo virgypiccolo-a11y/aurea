@@ -2489,19 +2489,29 @@ function liveShowJoinReq(id,name){ const panel=document.getElementById('live-pan
 function liveApprove(id,name,btn){ _livePublish({t:'approve',target:id}); if(btn&&btn.parentElement)btn.parentElement.remove(); toast('Hai autorizzato '+(name||'')); }
 async function liveFlipCam(){ if(!_live||!_live.publishing||!_live.room){toast('Camera non attiva');return;}
   const lp=_live.room.localParticipant, room=_live.room;
+  const next=(_live.facing==='environment')?'user':'environment';   // lato desiderato: si ALTERNA a ogni tocco
+  const wantBack=(next==='environment');
   const reattach=()=>setTimeout(()=>{ try{ lp.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(lp,pub.track,true); } }); }catch(e){} },350);
   try{
     let cams=[]; try{ cams=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); }catch(e){}
-    if(cams.length>=2 && typeof room.switchActiveDevice==='function'){
-      _live.camIdx=((_live.camIdx==null?0:_live.camIdx)+1)%cams.length;
-      const dev=cams[_live.camIdx];
-      await room.switchActiveDevice('videoinput',dev.deviceId);          // cambia DAVVERO fotocamera
-      const l=(dev.label||'').toLowerCase();
-      if(/back|rear|environment|posterior|traseira|arrière/.test(l)) _live.facing='environment';
-      else if(/front|user|face|anterior|frontale/.test(l)) _live.facing='user';
-      else _live.facing=(_live.facing==='environment')?'user':'environment';
+    // scelgo ESPLICITAMENTE la fotocamera del lato giusto; per la posteriore prendo SOLO quella normale (no grandangolo/tele)
+    const isBack=l=>/back|rear|environment|posterior|traseira|arrière|rück/.test(l);
+    const isFront=l=>/front|user|face|anterior|frontale|selfie/.test(l);
+    const isSpecial=l=>/ultra|tele|wide|dual|triple|macro|depth/.test(l);   // lenti "speciali" da evitare
+    let dev=null;
+    if(wantBack){
+      const backs=cams.filter(c=>isBack((c.label||'').toLowerCase()));
+      dev = backs.find(c=>/^back camera$/i.test((c.label||'').trim()))            // "Back Camera" = la principale
+         || backs.find(c=>!isSpecial((c.label||'').toLowerCase()))                 // altrimenti la prima non-speciale
+         || backs[0] || null;
     } else {
-      const next=(_live.facing==='environment')?'user':'environment';
+      dev = cams.find(c=>isFront((c.label||'').toLowerCase())) || null;
+    }
+    if(dev && typeof room.switchActiveDevice==='function'){
+      await room.switchActiveDevice('videoinput',dev.deviceId);
+      _live.facing=next;
+    } else {
+      // etichette non disponibili: riacquisisco imponendo il lato
       await lp.setCameraEnabled(false); await new Promise(r=>setTimeout(r,150));
       try{ await lp.setCameraEnabled(true,{facingMode:{exact:next}}); }
       catch(_){ await lp.setCameraEnabled(true,{facingMode:next}); }
