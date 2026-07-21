@@ -1200,6 +1200,7 @@ const MENU=[
   {id:'carrello',icn:'cart',l:'Carrello'},
   {id:'ciclo',icn:'flower',l:'Ciclo',fem:true,usr:true},
   {id:'nutriplan',icn:'piano',l:'Piano nutrizionale',usr:true},
+  {id:'clientplans',icn:'clipboard',l:'Dal professionista',usr:true},
   {id:'promemoria',icn:'bell',l:'Promemoria'},
   {id:'pro',icn:'shield',l:'Area pro'},
   {id:'cloud',icn:'cloud',l:'Account'}
@@ -2913,9 +2914,20 @@ function proDashHTML(){
     <div class="row" onclick="go('prenota')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:#e8f1ff;color:var(--blue)">${ic('calendar',22)}</div><div class="rt"><b>Agenda & appuntamenti</b><small>vedi e gestisci le prenotazioni dei clienti</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('pro')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--violet-s);color:var(--violet)">${ic('clock',22)}</div><div class="rt"><b>Disponibilità</b><small>imposta i giorni e gli orari in cui ricevi</small></div><div class="rv">›</div></div>
     <div class="row" onclick="go('clientchat')" style="cursor:pointer;padding:9px 0"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('users',22)}</div><div class="rt"><b>Chat con i clienti</b><small>rispondi ai messaggi dei tuoi clienti</small></div><div class="rv">›</div></div>
-    <div class="row" onclick="go('shop')" style="cursor:pointer;padding:9px 0${(canPlan()||canTrainer())?'':';border-bottom:none'}"><div class="ri" style="background:#fff0e0;color:#c8781f">${ic('bag',22)}</div><div class="rt"><b>Vendi integratori</b><small>inserisci i tuoi prodotti nel negozio</small></div><div class="rv">›</div></div>
-    ${canTrainer()?`<div class="row" onclick="go('allenamento')" style="cursor:pointer;padding:9px 0${canPlan()?'':';border-bottom:none'}"><div class="ri" style="background:var(--coral-s);color:var(--coral)">${ic('dumbbell',22)}</div><div class="rt"><b>Pubblica video allenamenti</b><small>visibili a tutti gli utenti</small></div><div class="rv">›</div></div>`:''}
-    ${canPlan()?`<div class="row" onclick="go('clientplans')" style="cursor:pointer;padding:9px 0;border-bottom:none"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('clipboard',22)}</div><div class="rt"><b>Piani nutrizionali per i clienti</b><small>crea e invia piani personalizzati</small></div><div class="rv">›</div></div>`:''}
+    <div class="row" onclick="go('clientplans')" style="cursor:pointer;padding:9px 0;border-bottom:none"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic('clipboard',22)}</div><div class="rt"><b>Documenti inviati ai clienti</b><small>piani, schede, routine e note</small></div><div class="rv">›</div></div>
+  </div>
+
+  <div class="section-title">Strumenti per i tuoi clienti</div>
+  <div class="card tight">
+    ${(()=>{ const T=proTools(); const rows=[];
+      const R=(ci,bg,col,t,sb,act)=>`<div class="row" onclick="${act}" style="cursor:pointer;padding:10px 0"><div class="ri" style="background:${bg};color:${col}">${ic(ci,22)}</div><div class="rt"><b>${t}</b><small>${sb}</small></div><div class="rv">＋</div></div>`;
+      if(T.has('piano')) rows.push(R('clipboard','var(--mint)','var(--green-d)','Piano nutrizionale','crea il piano dai dati del paziente','addClientPlan()'));
+      if(T.has('prodotti')) rows.push(R('bag','#fff0e0','#c8781f','Consiglia prodotti / routine','seleziona i prodotti adatti al cliente','sendClientProducts()'));
+      if(T.has('allenamento')){ rows.push(R('dumbbell','var(--coral-s)','var(--coral)','Scheda di allenamento','programma per il singolo cliente','addClientProgram()')); rows.push(R('video','var(--coral-s)','var(--coral)','Pubblica video allenamenti','visibili a tutti gli utenti',"go('allenamento')")); }
+      if(T.has('note')) rows.push(R('clipboard','var(--violet-s)','var(--violet)','Note e consigli al cliente','indicazioni scritte / percorso','addClientNote()'));
+      if(T.has('vendita')||canSell()) rows.push(R('bag','#fff0e0','#c8781f','Vendi integratori','inserisci i tuoi prodotti nel negozio',"go('shop')"));
+      return rows.map((r,i)=> i===rows.length-1? r.replace('padding:10px 0"','padding:10px 0;border-bottom:none"') : r).join('');
+    })()}
   </div>
 
   <div class="section-title">Il tuo profilo pubblico</div>
@@ -3039,19 +3051,19 @@ function deleteGroup(id){ confirmBox('Eliminare questo gruppo e tutti i suoi mes
 async function cloudLoadPlans(){ if(!cloudOn()||!cloudUser)return []; try{ const {data,error}=await SB.from('plans').select('*').order('created_at',{ascending:false}); if(error)throw error; return data||[]; }catch(e){ return []; } }
 function clientplansHTML(){
   const mine=isProMode();
-  return `<button class="back" onclick="go('${mine?'home':'piano'}')">← Indietro</button>
-  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${mine?'Crea e invia':'Dal tuo professionista'}</div><div class="n">📋 Piani nutrizionali</div></div></div>
-  ${mine?`<button class="btn ghost sm" style="margin-bottom:12px" onclick="addClientPlan()">＋ Nuovo piano per un cliente</button>`:'<div class="alert info"><span>📋</span><div>Qui trovi i piani che i professionisti hanno creato per te.</div></div>'}
+  return `<button class="back" onclick="go('${mine?'home':'profilo'}')">← Indietro</button>
+  <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${mine?'Crea e invia':'Dal tuo professionista'}</div><div class="n">📋 ${mine?'Documenti clienti':'I miei documenti'}</div></div></div>
+  ${mine?`<div class="sub" style="margin-bottom:10px">Crea un documento per un cliente dagli <b>Strumenti</b> nella tua Home, oppure qui:</div><div class="quick" style="margin-bottom:12px">${(()=>{const T=proTools();let b='';if(T.has('piano'))b+='<button class="qa" onclick="addClientPlan()"><span class="qi" style="background:var(--mint);color:var(--green-d)">🥗</span>Piano</button>';if(T.has('prodotti'))b+='<button class="qa" onclick="sendClientProducts()"><span class="qi" style="background:#fff0e0">🧴</span>Prodotti</button>';if(T.has('allenamento'))b+='<button class="qa" onclick="addClientProgram()"><span class="qi" style="background:var(--coral-s)">💪</span>Allenamento</button>';if(T.has('note'))b+='<button class="qa" onclick="addClientNote()"><span class="qi" style="background:var(--violet-s)">📝</span>Note</button>';return b;})()}</div>`:'<div class="alert info"><span>📋</span><div>Qui trovi i piani, le schede e le indicazioni che i professionisti hanno creato per te.</div></div>'}
   <div id="plans-list"><div class="card"><div class="sub">Caricamento…</div></div></div>`;
 }
 function renderPlans(){ const c=document.getElementById('plans-list'); if(!c)return;
-  if(!(cloudOn()&&loggedIn())){ c.innerHTML='<div class="card" style="text-align:center"><div class="sub">Accedi per vedere i piani.</div></div>'; return; }
-  cloudLoadPlans().then(rows=>{ c.innerHTML=rows.length?rows.map(pl=>`<div class="card">
-    <div class="h">${pl.title||'Piano'}</div>
-    <div class="sub" style="margin-bottom:6px">${isProMode()?'Per: <b>'+(pl.client_email||'—')+'</b>':'Da: <b>'+(pl.pro_name||'professionista')+'</b>'} · ${(pl.created_at||'').slice(0,10)}</div>
+  if(!(cloudOn()&&loggedIn())){ c.innerHTML='<div class="card" style="text-align:center"><div class="sub">Accedi per vedere i documenti.</div></div>'; return; }
+  cloudLoadPlans().then(rows=>{ c.innerHTML=rows.length?rows.map(pl=>{ const km=planKindMeta(pl.kind); return `<div class="card">
+    <div class="h">${km[0]} ${pl.title||km[1]}</div>
+    <div class="sub" style="margin-bottom:6px">${km[1]} · ${isProMode()?'Per: <b>'+(pl.client_email||'—')+'</b>':'Da: <b>'+(pl.pro_name||'professionista')+'</b>'} · ${(pl.created_at||'').slice(0,10)}</div>
     <div class="sub" style="white-space:pre-wrap">${(pl.content||'').replace(/</g,'&lt;')}</div>
     ${isProMode()?`<button class="btn sm sec" style="margin-top:10px;width:auto;padding:7px 12px" onclick="delClientPlan('${pl.id}')">🗑 Elimina</button>`:''}
-  </div>`).join(''):`<div class="card" style="text-align:center"><div style="font-size:40px">📋</div><div class="sub">${isProMode()?'Nessun piano creato. Tocca "Nuovo piano".':'Nessun piano ricevuto per ora.'}</div></div>`; });
+  </div>`; }).join(''):`<div class="card" style="text-align:center"><div style="font-size:40px">📋</div><div class="sub">${isProMode()?'Ancora nessun documento inviato.':'Nessun documento ricevuto per ora.'}</div></div>`; });
 }
 // Genera il testo del piano dai dati fisici del paziente (riusa il motore nutrizionale)
 function generatePlanText(pt){
@@ -3099,11 +3111,47 @@ function addClientPlan(){ if(!canPlan()){toast('Non abilitato ai piani nutrizion
       const body=generatePlanText(pt);
       const notes=(v.notes||'').trim()?('\nNOTE DEL PROFESSIONISTA:\n'+(v.notes||'').trim()):'';
       const content=head+body+notes;
-      try{ const {error}=await SB.from('plans').insert({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name,client_email:v.email.trim().toLowerCase(),title:v.title.trim(),content:content}); if(error)throw error; renderPlans(); toast('Piano generato e inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; }
+      try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:v.title.trim(),content:content,kind:'piano'}); renderPlans(); toast('Piano generato e inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; }
     }
   });
 }
-function delClientPlan(id){ confirmBox('Eliminare questo piano?',async()=>{ try{ await SB.from('plans').delete().eq('id',id); renderPlans(); toast('Piano eliminato'); }catch(e){ toast('Errore: '+(e.message||e)); } },{icon:'📋',yes:'Elimina',danger:true}); }
+/* ===== Strumenti per ruolo del professionista ===== */
+async function cloudSendPlan(row){ const base=Object.assign({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name},row); let {error}=await SB.from('plans').insert(base); if(error&&/column|kind|schema cache|could not find/i.test(error.message||'')){ const b2=Object.assign({},base); delete b2.kind; const r=await SB.from('plans').insert(b2); error=r.error; } if(error)throw error; }
+function proTools(){ const p=((S.pro&&S.pro.profession)||'').toLowerCase(); const s=new Set();
+  if(/nutrizionist|dietist|biolog|diabetolog|endocrinolog/.test(p)) s.add('piano');
+  if(/dermatolog|estetic|diabetolog|endocrinolog|ginecolog/.test(p)) s.add('prodotti');
+  if(/trainer|scienze motorie/.test(p)) s.add('allenamento');
+  if(/psicolog|ginecolog|medico|dermatolog|estetic|diabetolog|endocrinolog|trainer/.test(p)) s.add('note');
+  if(/fornitore/.test(p)) s.add('vendita');
+  if(isAdmin()){ ['piano','prodotti','allenamento','note','vendita'].forEach(x=>s.add(x)); }
+  if(!s.size) s.add('note');
+  return s; }
+function addClientProgram(){ openForm({title:'Scheda di allenamento',subtitle:'Per il singolo cliente',
+  fields:[{id:'email',label:'Email del cliente'},{id:'title',label:'Titolo',ph:'es. Scheda forza · 4 settimane'},{id:'content',label:'Programma (esercizi · serie · ripetizioni)',type:'textarea',ph:'Giorno A — Squat 4x8, Panca 4x10…\nGiorno B — …'}],
+  submit:'Invia al cliente',
+  onSubmit:async(v)=>{ if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((v.email||'').trim())){toast('Email cliente non valida');return false;} if(!(v.content||'').trim()){toast('Inserisci il programma');return false;}
+    try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:(v.title||'Scheda allenamento').trim(),content:v.content.trim(),kind:'allenamento'}); if(curScreen==='clientplans')renderPlans(); toast('Scheda inviata ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }
+function addClientNote(){ openForm({title:'Note e consigli',subtitle:'Inviati al cliente',
+  fields:[{id:'email',label:'Email del cliente'},{id:'title',label:'Titolo',ph:'es. Indicazioni post-visita'},{id:'content',label:'Testo',type:'textarea',ph:'Consigli, indicazioni, percorso tra gli incontri…'}],
+  submit:'Invia',
+  onSubmit:async(v)=>{ if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((v.email||'').trim())){toast('Email cliente non valida');return false;} if(!(v.content||'').trim()){toast('Scrivi qualcosa');return false;}
+    try{ await cloudSendPlan({client_email:v.email.trim().toLowerCase(),title:(v.title||'Note').trim(),content:v.content.trim(),kind:'note'}); if(curScreen==='clientplans')renderPlans(); toast('Inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }}); }
+function sendClientProducts(){ const prods=allProducts(); if(!prods.length){ toast('Catalogo vuoto: aggiungi prima i prodotti nello shop'); return; }
+  const box=modalSheet(`<div class="grab"></div><h3 style="text-align:center;margin:0 0 4px;font-size:17px">Consiglia prodotti</h3><div class="sub" style="text-align:center;margin-bottom:12px">Seleziona i prodotti adatti al cliente</div>
+    <div class="field"><label>Email del cliente</label><input id="rt-email" placeholder="cliente@email.com"></div>
+    <div class="field"><label>Titolo</label><input id="rt-title" value="Routine consigliata"></div>
+    <div style="max-height:36vh;overflow-y:auto;margin-bottom:10px">${prods.map((p,i)=>`<label class="row" style="cursor:pointer;padding:8px 0"><input type="checkbox" class="rt-p" value="${i}" style="width:18px;height:18px;margin-right:8px;flex:0 0 18px"><div class="ri" style="background:${p.bg||'var(--mint)'};overflow:hidden;padding:0">${p.img?`<img src="${p.img}" style="width:100%;height:100%;object-fit:cover">`:(p.ic||'💊')}</div><div class="rt" style="flex:1"><b>${p.n}</b><small>€${(+p.p).toFixed(2)}</small></div></label>`).join('')}</div>
+    <div class="field"><label>Come usarli (mattina/sera, note)</label><textarea id="rt-note" rows="2" style="width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:none" placeholder="es. Detergente mattina e sera, crema idratante la sera…"></textarea></div>
+    <button class="btn" id="rt-send">Invia al cliente</button>
+    <button class="btn sec sm" style="margin-top:8px" onclick="this.closest('.app-modal').remove()">Annulla</button>`);
+  box.querySelector('#rt-send').onclick=async()=>{ const email=(box.querySelector('#rt-email').value||'').trim().toLowerCase(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){toast('Email non valida');return;}
+    const sel=[...box.querySelectorAll('.rt-p:checked')].map(c=>prods[+c.value]).filter(Boolean); if(!sel.length){toast('Seleziona almeno un prodotto');return;}
+    const title=(box.querySelector('#rt-title').value||'Routine consigliata').trim(); const note=(box.querySelector('#rt-note').value||'').trim();
+    const content='PRODOTTI CONSIGLIATI:\n'+sel.map(p=>'• '+p.n+' — €'+(+p.p).toFixed(2)).join('\n')+(note?('\n\nCome usarli:\n'+note):'');
+    try{ await cloudSendPlan({client_email:email,title:title,content:content,kind:'routine'}); box.remove(); toast('Inviato al cliente ✓'); if(curScreen==='clientplans')renderPlans(); }catch(e){ toast('Errore: '+((e&&e.message)||e)); } };
+}
+function planKindMeta(k){ return ({piano:['🥗','Piano nutrizionale'],routine:['🧴','Prodotti / routine'],allenamento:['💪','Scheda allenamento'],note:['📝','Note e consigli']})[k]||['📋','Documento']; }
+function delClientPlan(id){ confirmBox('Eliminare questo documento?',async()=>{ try{ await SB.from('plans').delete().eq('id',id); renderPlans(); toast('Eliminato'); }catch(e){ toast('Errore: '+(e.message||e)); } },{icon:'📋',yes:'Elimina',danger:true}); }
 function shopHTML(){
   const prods=allProducts(); const PAGE=8; const pages=Math.max(1,Math.ceil(prods.length/PAGE));
   const pg=Math.min(S.shopPage||0,pages-1); const slice=prods.slice(pg*PAGE,pg*PAGE+PAGE);
