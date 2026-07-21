@@ -239,10 +239,6 @@ body{
 .seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:11px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer}
 .fbtn{background:none;border:none;display:flex;align-items:center;gap:5px;font-weight:700;color:var(--ink);cursor:pointer;font-size:13px;padding:0}
 .notifdot{position:absolute;top:-3px;right:-3px;background:var(--coral);color:#fff;font-size:10px;font-weight:800;min-width:17px;height:17px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px}
-.msg-tick{font-size:10px;opacity:.65;margin-left:6px;vertical-align:bottom}
-.msg-tick.read{color:#4b9fff;opacity:1}
-.nav-msgdot{position:absolute;top:2px;right:calc(50% - 18px);width:9px;height:9px;background:var(--coral);border-radius:50%;box-shadow:0 0 0 2px #fff}
-.nav button{position:relative}
 /* ===== Diretta live (LiveKit) ===== */
 .live-panel{position:absolute;inset:0;z-index:230;background:#000;display:flex;flex-direction:column;overflow:hidden;border-radius:40px}
 .live-top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,0));color:#fff;position:absolute;top:0;left:0;right:0;z-index:6}
@@ -260,6 +256,14 @@ body{
 .live-jr{position:absolute;top:60px;left:12px;right:12px;z-index:9;background:rgba(13,21,18,.94);backdrop-filter:blur(6px);color:#fff;padding:10px 12px;border-radius:14px;display:flex;align-items:center;gap:8px;font-size:13px;box-shadow:0 8px 22px rgba(0,0,0,.45)}
 .live-jr button{background:var(--green);color:#fff;border:none;border-radius:12px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer;flex:0 0 auto}
 .live-jr button.no{background:rgba(255,255,255,.22)}
+.msg-tick{font-size:10px;opacity:.65;margin-left:6px;vertical-align:bottom}
+.msg-tick.read{color:#4b9fff;opacity:1}
+.chat-typing{align-items:center;gap:4px;padding:4px 14px 8px;font-size:12px;color:var(--muted);font-weight:600}
+.chat-typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);display:inline-block;animation:typedot 1.2s infinite}
+.chat-typing i:nth-child(3){animation-delay:.2s}.chat-typing i:nth-child(4){animation-delay:.4s}
+@keyframes typedot{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.nav-msgdot{position:absolute;top:2px;right:calc(50% - 18px);width:9px;height:9px;background:var(--coral);border-radius:50%;box-shadow:0 0 0 2px #fff}
+.nav button{position:relative}
 .live-hearts{position:absolute;bottom:120px;right:14px;width:70px;height:42vh;pointer-events:none;z-index:5}
 .live-heart{position:absolute;bottom:0;font-size:24px;animation:lkfloat 2.2s ease-out forwards}
 @keyframes lkfloat{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:1}100%{transform:translateY(-40vh) scale(1.25);opacity:0}}
@@ -2459,7 +2463,7 @@ async function liveBecomeCoHost(){ if(!_live||_live.publishing)return; toast('Se
   try{ await liveConnect(true); }catch(e){ toast('Errore ingresso: '+(e.message||e)); _live.publishing=false; }
   _live._switching=false; liveRenderActions(); }
 function liveKick(identity,name){ if(!_live||!_live.owner)return; confirmBox('Espellere '+((name||'questo utente')).replace(/</g,'&lt;')+' dalla diretta?',()=>{ _livePublish({t:'kick',target:identity}); liveRemoveTile(identity); toast('Utente espulso'); },{icon:'🚫',yes:'Espelli',danger:true}); }
-// Richiesta di partecipare: mostrata DENTRO il pannello diretta (così il creatore la vede subito, non dietro)
+// Richiesta di partecipare mostrata DENTRO il pannello (così il creatore la vede subito, non dietro)
 function liveShowJoinReq(id,name){ const panel=document.getElementById('live-panel'); if(!panel)return; if(document.getElementById('jr-'+cssId(id)))return;
   const bar=document.createElement('div'); bar.className='live-jr'; bar.id='jr-'+cssId(id);
   bar.innerHTML=`<span style="flex:1;min-width:0">🙋 <b>${(name||'Un utente').replace(/</g,'&lt;')}</b> vuole partecipare</span>
@@ -2468,21 +2472,29 @@ function liveShowJoinReq(id,name){ const panel=document.getElementById('live-pan
   panel.appendChild(bar); toast('🙋 '+((name||'Un utente'))+' vuole partecipare'); }
 function liveApprove(id,name,btn){ _livePublish({t:'approve',target:id}); if(btn&&btn.parentElement)btn.parentElement.remove(); toast('Hai autorizzato '+(name||'')); }
 async function liveFlipCam(){ if(!_live||!_live.publishing||!_live.room){toast('Camera non attiva');return;}
-  const next=(_live.facing==='environment')?'user':'environment';
-  const lp=_live.room.localParticipant;
+  const lp=_live.room.localParticipant, room=_live.room;
+  const reattach=()=>setTimeout(()=>{ try{ lp.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(lp,pub.track,true); } }); }catch(e){} },350);
   try{
-    // riacquisisce davvero l'altra fotocamera: spenta e riaccesa con il nuovo lato
-    await lp.setCameraEnabled(false);
-    await new Promise(r=>setTimeout(r,150));
-    await lp.setCameraEnabled(true,{facingMode:{ideal:next}});
-    _live.facing=next; _live.camOn=true;
-    setTimeout(()=>{ try{ lp.trackPublications.forEach(pub=>{ if(pub.track&&pub.track.kind==='video'){ liveAttachVideo(lp,pub.track,true); } }); }catch(e){} },350);
-    const b=document.getElementById('live-cam'); if(b){b.textContent='📷';b.classList.remove('off');}
-    toast(next==='environment'?'Fotocamera posteriore 📷':'Fotocamera frontale 🤳');
-  }catch(e){
-    try{ await lp.setCameraEnabled(true,{facingMode:{ideal:_live.facing}}); }catch(_){}
-    toast('Questo dispositivo non permette di girare la camera');
-  } }
+    let cams=[]; try{ cams=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); }catch(e){}
+    if(cams.length>=2 && typeof room.switchActiveDevice==='function'){
+      _live.camIdx=((_live.camIdx==null?0:_live.camIdx)+1)%cams.length;
+      const dev=cams[_live.camIdx];
+      await room.switchActiveDevice('videoinput',dev.deviceId);          // cambia DAVVERO fotocamera
+      const l=(dev.label||'').toLowerCase();
+      if(/back|rear|environment|posterior|traseira|arrière/.test(l)) _live.facing='environment';
+      else if(/front|user|face|anterior|frontale/.test(l)) _live.facing='user';
+      else _live.facing=(_live.facing==='environment')?'user':'environment';
+    } else {
+      const next=(_live.facing==='environment')?'user':'environment';
+      await lp.setCameraEnabled(false); await new Promise(r=>setTimeout(r,150));
+      try{ await lp.setCameraEnabled(true,{facingMode:{exact:next}}); }
+      catch(_){ await lp.setCameraEnabled(true,{facingMode:next}); }
+      _live.facing=next;
+    }
+    _live.camOn=true; const b=document.getElementById('live-cam'); if(b){b.textContent='📷';b.classList.remove('off');}
+    reattach();
+    toast(_live.facing==='environment'?'Fotocamera posteriore 📷':'Fotocamera frontale 🤳');
+  }catch(e){ toast('Cambio fotocamera non riuscito su questo dispositivo'); reattach(); } }
 function liveSystem(txt){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg sys'; d.textContent=txt; c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function liveChatLine(name,text,hl){ const c=document.getElementById('live-chat'); if(!c)return; const d=document.createElement('div'); d.className='live-cmsg'+(hl?' hl':''); d.innerHTML='<b>'+String(name).replace(/</g,'&lt;')+'</b> '+String(text).replace(/</g,'&lt;'); c.appendChild(d); c.scrollTop=c.scrollHeight; _trimLiveChat(c); }
 function _trimLiveChat(c){ while(c.children.length>40)c.removeChild(c.firstChild); }
@@ -2886,7 +2898,8 @@ function clientchatHTML(){
     <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">${w.group?((g&&(g.members||[]).length)||0)+' membri':'Conversazione con'}</div><div class="n">${w.group?ic('users',20):'💬'} ${w.name}</div></div>
       ${isOwner?`<button class="avatar" style="border:none" onclick="deleteGroup(${w.id})">🗑️</button>`:''}</div>
     <div class="chat" id="chat-thread" style="min-height:44vh"></div>
-    <div class="chatbar"><button onclick="attachChat()" style="background:var(--mint);color:var(--green-d)" title="Allega">📎</button><input id="chat-msg" placeholder="Scrivi un messaggio…" onkeydown="if(event.key==='Enter')sendClientMsg()"><button onclick="sendClientMsg()">➤</button></div>`;
+    <div id="chat-typing" class="chat-typing" style="display:none"><span>${(w.name||'').replace(/</g,'&lt;')} sta scrivendo</span><i></i><i></i><i></i></div>
+    <div class="chatbar"><button onclick="attachChat()" style="background:var(--mint);color:var(--green-d)" title="Allega">📎</button><input id="chat-msg" placeholder="Scrivi un messaggio…" oninput="chatTyping()" onkeydown="if(event.key==='Enter')sendClientMsg()"><button onclick="sendClientMsg()">➤</button></div>`;
   }
   return `<button class="back" onclick="go('${isProMode()?'home':'prenota'}')">← Indietro</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Messaggi e gruppi</div><div class="n">💬 Chat</div></div></div>
@@ -2915,7 +2928,7 @@ function renderChat(){
     }
   });
 }
-async function sendClientMsg(){ const el=document.getElementById('chat-msg'); const t=(el&&el.value||'').trim(); if(!t||!S._chatWith)return; el.value='';
+async function sendClientMsg(){ const el=document.getElementById('chat-msg'); const t=(el&&el.value||'').trim(); if(!t||!S._chatWith)return; el.value=''; hideTyping();
   try{ await cloudSendMessage(chatSendPayload({text:t})); renderChat(); }catch(e){ toast('Invio non riuscito: '+(e.message||e)); } }
 /* ===== Messaggi non letti (pallino) + visualizzato (spunta) ===== */
 let MSG_UNREAD=0, _chatPoll=null;
@@ -2923,12 +2936,29 @@ async function cloudLoadMsgUnread(){ if(!cloudOn()||!cloudUser){MSG_UNREAD=0;ret
 async function cloudMarkThreadRead(otherId){ if(!cloudOn()||!cloudUser||!otherId)return; try{ await SB.from('messages').update({read:true}).eq('to_id',cloudUser.id).eq('from_id',otherId).eq('read',false); }catch(e){} refreshMsgBadges(); }
 function paintMsgBadges(){ document.querySelectorAll('.msg-badge').forEach(b=>{ b.style.display=MSG_UNREAD?'flex':'none'; b.textContent=MSG_UNREAD>9?'9+':MSG_UNREAD; });
   const nb=document.querySelector('#nav button[data-t="community"]'); if(nb){ let d=nb.querySelector('.nav-msgdot'); if(MSG_UNREAD){ if(!d){ d=document.createElement('span'); d.className='nav-msgdot'; nb.appendChild(d); } } else if(d){ d.remove(); } } }
-function refreshMsgBadges(){ if(!(cloudOn()&&loggedIn())){ MSG_UNREAD=0; paintMsgBadges(); return; } cloudLoadMsgUnread().then(()=>{ paintMsgBadges(); const h=document.getElementById('home-msg'); if(h&&curScreen==='home')renderHomeMsg(); }); }
+function refreshMsgBadges(){ if(!(cloudOn()&&loggedIn())){ MSG_UNREAD=0; paintMsgBadges(); return; } cloudLoadMsgUnread().then(()=>{ paintMsgBadges(); if(curScreen==='home')renderHomeMsg(); }); }
 function renderHomeMsg(){ const c=document.getElementById('home-msg'); if(!c)return; if(!MSG_UNREAD){ c.innerHTML=''; return; }
-  c.innerHTML=`<div class="card" onclick="go('clientchat')" style="cursor:pointer;margin-top:14px;background:linear-gradient(120deg,var(--mint),#fff)"><div class="row"><div class="ri" style="background:#fff;color:var(--green-d);position:relative">✉️<span class="notifdot" style="display:flex">${MSG_UNREAD>9?'9+':MSG_UNREAD}</span></div><div class="rt" style="flex:1"><b>${MSG_UNREAD===1?'Hai 1 nuovo messaggio':'Hai '+MSG_UNREAD+' nuovi messaggi'}</b><small>Tocca per aprire la chat</small></div><div class="rv">›</div></div></div>`;
-}
-function startChatPoll(){ stopChatPoll(); if(!(cloudOn()&&loggedIn()))return; _chatPoll=setInterval(()=>{ if(curScreen==='clientchat'){ renderChat(); } else { stopChatPoll(); } },4000); }
+  c.innerHTML=`<div class="card" onclick="go('clientchat')" style="cursor:pointer;margin-top:14px;background:linear-gradient(120deg,var(--mint),#fff)"><div class="row"><div class="ri" style="background:#fff;color:var(--green-d);position:relative">✉️<span class="notifdot" style="display:flex">${MSG_UNREAD>9?'9+':MSG_UNREAD}</span></div><div class="rt" style="flex:1"><b>${MSG_UNREAD===1?'Hai 1 nuovo messaggio':'Hai '+MSG_UNREAD+' nuovi messaggi'}</b><small>Tocca per aprire la chat</small></div><div class="rv">›</div></div></div>`; }
+function startChatPoll(){ stopChatPoll(); if(!(cloudOn()&&loggedIn()))return; _chatPoll=setInterval(()=>{ if(curScreen==='clientchat'){ renderChat(); } else { stopChatPoll(); closeChatRealtime(); } },4000); }
 function stopChatPoll(){ if(_chatPoll){ clearInterval(_chatPoll); _chatPoll=null; } }
+/* ===== Tempo reale: nuovi messaggi + "sta scrivendo…" ===== */
+let _chatCh=null, _chatChKey=null, _typingSentAt=0, _typingHide=null;
+function _dmKey(otherId){ return 'dm-'+[cloudUser.id,otherId].sort().join('_'); }
+function openChatRealtime(otherId){
+  if(!(cloudOn()&&loggedIn())||!otherId||!SB.channel)return;
+  const key=_dmKey(otherId); if(_chatCh&&_chatChKey===key)return; closeChatRealtime(); _chatChKey=key;
+  try{
+    _chatCh=SB.channel(key,{config:{broadcast:{self:false}}});
+    _chatCh.on('broadcast',{event:'typing'},(msg)=>{ if(msg&&msg.payload&&msg.payload.from===otherId) showTyping(); });
+    _chatCh.on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{ const m=payload&&payload.new; if(m&&((m.from_id===otherId&&m.to_id===cloudUser.id)||(m.from_id===cloudUser.id&&m.to_id===otherId))){ hideTyping(); if(curScreen==='clientchat')renderChat(); refreshMsgBadges(); } });
+    _chatCh.on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages'},(payload)=>{ const m=payload&&payload.new; if(m&&m.from_id===cloudUser.id&&m.to_id===otherId&&curScreen==='clientchat')renderChat(); });
+    _chatCh.subscribe();
+  }catch(e){ _chatCh=null; _chatChKey=null; }
+}
+function closeChatRealtime(){ if(_chatCh){ try{ SB.removeChannel(_chatCh); }catch(e){} _chatCh=null; _chatChKey=null; } hideTyping(); }
+function chatTyping(){ if(!_chatCh||!S._chatWith)return; const now=Date.now(); if(now-_typingSentAt<1800)return; _typingSentAt=now; try{ _chatCh.send({type:'broadcast',event:'typing',payload:{from:cloudUser.id}}); }catch(e){} }
+function showTyping(){ const el=document.getElementById('chat-typing'); if(!el)return; el.style.display='flex'; if(_typingHide)clearTimeout(_typingHide); _typingHide=setTimeout(hideTyping,3500); }
+function hideTyping(){ const el=document.getElementById('chat-typing'); if(el)el.style.display='none'; if(_typingHide){clearTimeout(_typingHide);_typingHide=null;} }
 function attachChat(){ if(!S._chatWith)return; fileFallback(async(dataUrl,file)=>{ if(!file)return; toast('Invio allegato…'); try{ const url=await uploadBlob(file,file.name||'allegato'); await cloudSendMessage(chatSendPayload({attachment:url,attachType:file.type||'file'})); renderChat(); }catch(e){ toast('Allegato non inviato: '+(e.message||e)); } },'*/*'); }
 function createGroup(){ if(!(cloudOn()&&loggedIn())){toast('Accedi per creare un gruppo');go('cloud');return;}
   openForm({title:'Nuovo gruppo',subtitle:'Aggiungi i membri con la loro email Auréa',
@@ -5329,8 +5359,8 @@ const BUILDERS={
 };
 function rebuild(id){const el=document.getElementById('sc-'+id);if(el&&BUILDERS[id])el.innerHTML=BUILDERS[id]();afterRender(id);}
 function afterRender(id){
+  if(id!=='clientchat'){ closeChatRealtime(); }
   if(id==='home'){renderHomeAppts(); renderHomeLive(); refreshMsgBadges();}
-  if(id==='clientchat'){startChatPoll();}
   if(id==='dirette'){renderDirette();}
   if(id==='piano'){renderDislike();}
   if(id==='prenota'){
@@ -5352,7 +5382,7 @@ function afterRender(id){
   if(id==='admin'){renderAdmin();}
   if(id==='ordini'){renderOrders();}
   if(id==='allenamento'){ if(cloudOn()&&!_wkLoaded&&!_wkFetching){ _wkFetching=true; cloudLoadWorkouts().then(()=>{ _wkLoaded=true; _wkFetching=false; if(curScreen==='allenamento')rebuild('allenamento'); }); } }
-  if(id==='clientchat'){renderChat();}
+  if(id==='clientchat'){renderChat(); startChatPoll(); if(S._chatWith&&!S._chatWith.group){ openChatRealtime(S._chatWith.id); } else { closeChatRealtime(); } }
   if(id==='clientplans'){renderPlans();}
   if(id==='ricerca'){loadSearchData();}
   if(id==='ricette'){ renderRecipes(); if(cloudOn()&&!_recLoaded&&!_recFetching){ _recFetching=true; cloudLoadRecipes().then(()=>{ _recLoaded=true; _recFetching=false; if(curScreen==='ricette')renderRecipes(); }); } }
