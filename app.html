@@ -689,6 +689,7 @@ function preloadCloud(){ renderNav(); if(S.pro && S.pro.status==='in_verifica'){
   cloudLoadProducts().then(()=>{ _prodLoaded=true; if(curScreen==='home')rebuild('home'); if(curScreen==='shop')rebuild('shop'); });
   cloudLoadDocs().then(()=>{ _docsLoaded=true; if(curScreen==='prenota')renderDocs('Tutti'); });
   cloudRegisterDirectory();
+  try{ markActiveToday(); if(cloudUser){ cloudSaveProfile(); } }catch(e){}   // registra il giorno di attività anche sul cloud (streak reale, cross-dispositivo)
 }
 // Elenco pubblico degli iscritti (solo id + nome), per farli trovare e seguire senza cercarli
 let DIRECTORY=[], _dirLoaded=false, _dirFetching=false;
@@ -780,7 +781,7 @@ async function cloudLoadFollowing(){ if(!cloudOn()||!cloudUser)return; try{ cons
 function isFollowingId(uid){ return FOLLOWING.has(uid); }
 async function cloudToggleFollow(uid){ if(!(cloudOn()&&loggedIn())){toast('Accedi per seguire');return false;} if(!uid||uid===cloudUser.id){return false;}
   try{ if(FOLLOWING.has(uid)){ await SB.from('follows').delete().eq('follower_id',cloudUser.id).eq('following_id',uid); FOLLOWING.delete(uid); return false; }
-    else { await SB.from('follows').insert({follower_id:cloudUser.id,following_id:uid}); FOLLOWING.add(uid); try{cloudNotify(uid,'follow',{});}catch(e){} try{bumpActivity(1);}catch(e){} return true; } }catch(e){ toast('Errore: '+(e.message||e)); return FOLLOWING.has(uid); } }
+    else { await SB.from('follows').insert({follower_id:cloudUser.id,following_id:uid}); FOLLOWING.add(uid); try{cloudNotify(uid,'follow',{});}catch(e){} try{bumpActivity(1,'follows');}catch(e){} return true; } }catch(e){ toast('Errore: '+(e.message||e)); return FOLLOWING.has(uid); } }
 async function cloudLoadSaves(){ if(!cloudOn()||!cloudUser)return; try{ const {data}=await SB.from('saves').select('post_id').eq('user_id',cloudUser.id); SAVED=new Set((data||[]).map(r=>String(r.post_id))); }catch(e){} }
 function isSaved(pid){ return SAVED.has(String(pid)); }
 async function cloudToggleSave(pid){ if(!(cloudOn()&&loggedIn())){toast('Accedi per salvare');return false;}
@@ -1405,29 +1406,31 @@ function percorsoHTML(){
 }
 /* ============ SFIDE + BADGE (gamification) ============ */
 function addMilestone(key,title,icn,promptShare){ S.milestones=S.milestones||[]; if(S.milestones.some(m=>m.key===key))return; const rec={key,title,date:todayKey(),icn:icn||'sparkle',shared:false}; S.milestones.push(rec); save(); if(promptShare)proposeShare(rec); }
+// Sfide basate sull'ATTIVITÀ REALE sul sito (si aggiornano da sole dai dati veri)
 const CHALLENGES=[
-  {id:'steps30', t:'30 giorni · 10.000 passi', d:'Cammina almeno 10.000 passi al giorno.', icn:'steps', target:30, day:()=>(S.steps||0)>=10000},
-  {id:'water7', t:'Idratazione · 7 giorni', d:'Raggiungi il tuo obiettivo d\'acqua ogni giorno.', icn:'drop', target:7, day:()=>(S.water||0)>=(S.waterGoal||8)},
-  {id:'workout12', t:'12 allenamenti', d:'Allenati 12 volte (circa 3 a settimana).', icn:'dumbbell', target:12, day:()=>((S.workoutLog&&S.workoutLog.length>0)||(S.workoutKcal||0)>0)},
-  {id:'sleep7', t:'Dormi meglio · 7 giorni', d:'Dormi almeno il minimo consigliato per 7 notti.', icn:'moon', target:7, day:()=>{ if(S.sleep==null)return false; return S.sleep>=sleepNeeded().min; }},
-  {id:'healthy7', t:'Mangia sano · 7 giorni', d:'Tieni l\'alimentazione in verde per 7 giorni.', icn:'piano', target:7, day:()=>{ const b=aureaBreakdown(); return b.alimentazione!=null&&b.alimentazione>=70; }}
+  {id:'streak7',  t:'7 giorni di fila',        d:'Usa Auréa per 7 giorni consecutivi.',  icn:'flame',    target:7,  cur:()=>activityStreak()},
+  {id:'streak30', t:'30 giorni di fila',       d:'Usa Auréa per 30 giorni consecutivi.', icn:'flame',    target:30, cur:()=>activityStreak()},
+  {id:'days30',   t:'Sempre presente',          d:'Apri l\'app in 30 giorni diversi.',    icn:'calendar', target:30, cur:()=>activeDaysCount()},
+  {id:'posts10',  t:'Attiva nella community',   d:'Pubblica 10 post.',                    icn:'users',    target:10, cur:()=>actCount('posts')},
+  {id:'follow15', t:'Fai rete',                 d:'Segui 15 persone.',                    icn:'users',    target:15, cur:()=>actCount('follows')}
 ];
 function chById(id){ return CHALLENGES.find(c=>c.id===id); }
 function joinChallenge(id){ S.challenges=S.challenges||{}; S.challenges[id]=S.challenges[id]||{joined:true,days:[],done:false}; S.challenges[id].joined=true; save(); checkChallenges(); rebuild('sfide'); go('sfide'); toast('Ti sei iscritto alla sfida! 💪'); }
 function leaveChallenge(id){ if(S.challenges&&S.challenges[id]){S.challenges[id].joined=false;} save(); rebuild('sfide'); go('sfide'); toast('Sfida abbandonata'); }
-function checkChallenges(){ S.challenges=S.challenges||{}; const tk=todayKey(); let done=null;
-  CHALLENGES.forEach(c=>{ const st=S.challenges[c.id]; if(!st||!st.joined||st.done)return; let ok=false; try{ok=c.day();}catch(e){} if(ok&&st.days.indexOf(tk)<0){ st.days.push(tk); if(st.days.length>=c.target){ st.done=true; done=c; } } });
+function chVal(c){ try{ return c.cur(); }catch(e){ return 0; } }
+function checkChallenges(){ S.challenges=S.challenges||{}; let done=null;
+  CHALLENGES.forEach(c=>{ const st=S.challenges[c.id]; if(!st||!st.joined||st.done)return; if(chVal(c)>=c.target){ st.done=true; done=c; } });
   try{save();}catch(e){}
-  if(done){ awardBadge('ch_'+done.id, 'Sfida: '+done.t, 'flame'); addMilestone('ch_'+done.id, 'Sfida completata: '+done.t, 'flame', true); }
+  if(done){ awardBadge('ch_'+done.id, 'Sfida: '+done.t, 'flame'); }
 }
+// Badge basati sull'attività reale sul sito
 const BADGES=[
-  {key:'streak7', t:'Costante', d:'7 giorni consecutivi', icn:'flame', cond:()=>scoreStreak()>=7},
-  {key:'streak30', t:'Inarrestabile', d:'30 giorni consecutivi', icn:'flame', cond:()=>scoreStreak()>=30},
-  {key:'wk10', t:'Atleta', d:'10 allenamenti completati', icn:'dumbbell', cond:()=>(S._workoutCount||0)>=10},
-  {key:'diary14', t:'Diario d\'oro', d:'14 pasti registrati', icn:'book', cond:()=>(S._diaryCount||0)>=14},
-  {key:'social', t:'Anima social', d:'Primo post pubblicato', icn:'users', cond:()=>!!S._everPosted},
-  {key:'score90', t:'Top form', d:'Aurea Score 90+', icn:'sparkle', cond:()=>bestScore()>=90},
-  {key:'goalb', t:'Obiettivo', d:'Obiettivo peso raggiunto', icn:'heart', cond:()=>S.wGoal&&S.wStart>S.wGoal&&S.wNow<=S.wGoal}
+  {key:'streak7',  t:'Costante',      d:'7 giorni consecutivi',   icn:'flame',    cond:()=>activityStreak()>=7},
+  {key:'streak30', t:'Inarrestabile', d:'30 giorni consecutivi',  icn:'flame',    cond:()=>activityStreak()>=30},
+  {key:'days30',   t:'Sempre presente', d:'30 giorni di attività', icn:'calendar', cond:()=>activeDaysCount()>=30},
+  {key:'social',   t:'Anima social',  d:'Primo post pubblicato',  icn:'users',    cond:()=>actCount('posts')>=1},
+  {key:'creator',  t:'Creator',       d:'10 post pubblicati',     icn:'users',    cond:()=>actCount('posts')>=10},
+  {key:'network',  t:'In rete',       d:'Segui 15 persone',       icn:'users',    cond:()=>actCount('follows')>=15}
 ];
 function awardBadge(key,title,icn){ S.badges=S.badges||[]; if(S.badges.some(b=>b.key===key))return false; S.badges.push({key,title:title||key,icn:icn||'sparkle',date:todayKey()}); return true; }
 function checkBadges(celebrate){ S.badges=S.badges||[]; const have=new Set(S.badges.map(b=>b.key)); let added=null;
@@ -1436,7 +1439,15 @@ function checkBadges(celebrate){ S.badges=S.badges||[]; const have=new Set(S.bad
 }
 // Il livello cresce con l'ATTIVITÀ nell'app: giorni di utilizzo + azioni (post, follow, commenti, messaggi, dirette) + badge
 function markActiveToday(){ S.activity=S.activity||{days:[],actions:0}; const d=(typeof todayKey==='function')?todayKey():new Date().toISOString().slice(0,10); if(!S.activity.days.includes(d)){ S.activity.days.push(d); if(S.activity.days.length>400)S.activity.days=S.activity.days.slice(-400); try{save();}catch(e){} } }
-function bumpActivity(n){ S.activity=S.activity||{days:[],actions:0}; S.activity.actions=(S.activity.actions||0)+(n||1); try{save();}catch(e){} const el=document.getElementById('sc-profilo'); }
+function bumpActivity(n,kind){ S.activity=S.activity||{days:[],actions:0}; S.activity.actions=(S.activity.actions||0)+(n||1); if(kind){ S.activity[kind]=(S.activity[kind]||0)+1; } try{save();}catch(e){} }
+function actCount(k){ return (S.activity&&S.activity[k])||0; }
+function activeDaysCount(){ return (S.activity&&S.activity.days)?S.activity.days.length:0; }
+// Giorni CONSECUTIVI di utilizzo del sito (in tempo reale: si azzera se salti un giorno)
+function activityStreak(){ const a=(S.activity&&S.activity.days)?S.activity.days.slice().filter(Boolean).sort():[]; if(!a.length)return 0;
+  const md=s=>{ const p=(''+s).split('-'); return Date.UTC(+p[0],(+p[1])-1,+p[2]); }; const DAY=86400000;
+  let streak=1; for(let i=a.length-1;i>0;i--){ const diff=Math.round((md(a[i])-md(a[i-1]))/DAY); if(diff===1)streak++; else if(diff===0)continue; else break; }
+  const today=md((typeof todayKey==='function')?todayKey():new Date().toISOString().slice(0,10)); const gap=Math.round((today-md(a[a.length-1]))/DAY);
+  return gap>1?0:streak; }
 function activityXP(){ const a=S.activity||{days:[],actions:0}; return (a.days?a.days.length:0)*15 + (a.actions||0)*4 + (S.badges||[]).length*30; }
 function xpTotal(){ return activityXP(); }
 function levelInfo(){ const xp=xpTotal(); return {xp,lvl:Math.floor(xp/150)+1,inLvl:xp%150,nextNeed:150}; }
@@ -1445,14 +1456,14 @@ function sfideHTML(){
   const st=S.challenges||{};
   return `<button class="back" onclick="go('community')">← Community</button>
   <div class="topbar" style="padding-top:0"><div class="hello"><div class="k">Mettiti alla prova</div><div class="n">🏆 Sfide</div></div></div>
-  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('flame',78)}</span><h4>Sfide della community</h4><p>Partecipa, avanza ogni giorno e sblocca badge. I progressi si aggiornano da soli dai tuoi dati.</p></div>
-  ${CHALLENGES.map(c=>{ const s=st[c.id]; const days=s?s.days.length:0; const pct=Math.min(100,Math.round(days/c.target*100)); const joined=s&&s.joined; const done=s&&s.done; return `
+  <div class="banner gg"><span class="b-ic" style="opacity:.18">${ic('flame',78)}</span><h4>Sfide di attività</h4><p>Si aggiornano da sole in base a quanto usi Auréa: giorni consecutivi e attività nella community. Niente da segnare a mano.</p></div>
+  ${CHALLENGES.map(c=>{ const s=st[c.id]; const cur=Math.min(chVal(c),c.target); const pct=Math.min(100,Math.round(chVal(c)/c.target*100)); const joined=s&&s.joined; const done=(s&&s.done)||chVal(c)>=c.target; const unit=/streak|days/.test(c.id)?'giorni':(c.id==='follow15'?'seguiti':'post'); return `
     <div class="card">
       <div class="row" style="padding:0"><div class="ri" style="background:var(--mint);color:var(--green-d)">${ic(c.icn,22)}</div><div class="rt" style="flex:1"><b>${c.t}</b><small>${c.d}</small></div>${done?'<span class="pill" style="background:var(--mint);color:var(--green-d)">✓ Completata</span>':''}</div>
-      ${joined||done?`<div class="bar" style="height:10px;margin:12px 0 6px"><i style="width:${pct}%;background:linear-gradient(90deg,var(--green),#4bd4a6)"></i></div><div class="sub">${days}/${c.target} giorni · ${pct}%</div>`:''}
+      ${joined||done?`<div class="bar" style="height:10px;margin:12px 0 6px"><i style="width:${pct}%;background:linear-gradient(90deg,var(--green),#4bd4a6)"></i></div><div class="sub">${cur}/${c.target} ${unit} · ${pct}%</div>`:''}
       <div style="margin-top:12px">${done?`<button class="btn sm sec" onclick="shareMilestoneByKey('ch_${c.id}')">Condividi il traguardo</button>`:(joined?`<button class="btn sm sec" onclick="leaveChallenge('${c.id}')">Abbandona</button>`:`<button class="btn sm" onclick="joinChallenge('${c.id}')">Partecipa</button>`)}</div>
     </div>`; }).join('')}
-  <div class="tiny">Presto: sfide tra amici e classifiche.</div>`;
+  <div class="tiny">I progressi restano salvati sul tuo account e continuano su ogni dispositivo.</div>`;
 }
 function badgeHTML(){
   checkBadges(false); const li=levelInfo(); const earned=new Set((S.badges||[]).map(b=>b.key));
@@ -1461,7 +1472,7 @@ function badgeHTML(){
   <div class="card">
     <div class="ring-wrap">
       <div class="ring" style="width:96px;height:96px;flex:0 0 96px">${ring(li.inLvl/li.nextNeed,'var(--green)',96,11)}<div class="c-val"><b style="font-size:26px">${li.lvl}</b><small>livello</small></div></div>
-      <div style="flex:1"><div class="h" style="margin-bottom:4px">${li.xp} XP totali</div><div class="sub">Ti mancano <b>${li.nextNeed-li.inLvl} XP</b> al livello ${li.lvl+1}.</div><div class="sub" style="margin-top:6px">Guadagni XP con badge, traguardi e sfide.</div></div>
+      <div style="flex:1"><div class="h" style="margin-bottom:4px">${li.xp} punti attività</div><div class="sub">Ti mancano <b>${li.nextNeed-li.inLvl}</b> al livello ${li.lvl+1}.</div><div class="sub" style="margin-top:6px">Sali di livello usando Auréa: giorni di utilizzo e attività nella community.</div></div>
     </div>
   </div>
   <div class="section-title">I tuoi badge</div>
@@ -2569,7 +2580,7 @@ function renderHomeLive(){ const c=document.getElementById('home-live'); if(!c)r
     document.getElementById('home-live').innerHTML=`<div class="section-title" style="margin-top:16px">🔴 In diretta ora</div><div class="card" onclick="watchLive('${l.room}','${l.pro_id||''}','${(l.pro_name||'').replace(/'/g,'')}')" style="cursor:pointer"><div class="row"><div class="ri" style="background:var(--coral-s);color:var(--coral)">🔴</div><div class="rt" style="flex:1"><b>${(l.title||'Diretta').replace(/</g,'&lt;')}</b><small>${l.pro_name||'Professionista'}${lives.length>1?' · e altre '+(lives.length-1):''}</small></div><div class="rv">▶</div></div></div>`;
   });
 }
-function watchLive(room,hostId,hostName){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per guardare la diretta'); go('cloud'); return; } try{bumpActivity(1);}catch(e){} openLive(room,{host:false,hostId:hostId||'',title:hostName?('Diretta di '+hostName):'🔴 Diretta live'}); }
+function watchLive(room,hostId,hostName){ if(!(cloudOn()&&loggedIn())){ toast('Accedi per guardare la diretta'); go('cloud'); return; } try{bumpActivity(1,'lives');}catch(e){} openLive(room,{host:false,hostId:hostId||'',title:hostName?('Diretta di '+hostName):'🔴 Diretta live'}); }
 function startDiretta(){ if(!isProMode()&&!isAdmin()){toast('Solo i professionisti possono trasmettere');return;} if(!(cloudOn()&&loggedIn())){toast('Accedi per trasmettere');go('cloud');return;}
   openForm({title:'Avvia una diretta',subtitle:'Dai un titolo alla tua diretta',fields:[{id:'t',label:'Titolo',ph:'es. Allenamento full body'}],submit:'🔴 Vai in diretta',
     onSubmit:async(v)=>{ const t=(v.t||'').trim()||'Diretta'; try{ await cloudStopLive(); const live=await cloudStartLive(t); openLive(live.room,{host:true,hostId:cloudUser.id,title:'🔴 '+t}); toast('Sei in diretta! 🔴'); }catch(e){ toast('Errore: '+(e.message||e)); return false; } }
@@ -2955,7 +2966,7 @@ function renderChat(){
   });
 }
 async function sendClientMsg(){ const el=document.getElementById('chat-msg'); const t=(el&&el.value||'').trim(); if(!t||!S._chatWith)return; el.value=''; hideTyping();
-  try{ await cloudSendMessage(chatSendPayload({text:t})); try{bumpActivity(1);}catch(e){} renderChat(); }catch(e){ toast('Invio non riuscito: '+(e.message||e)); } }
+  try{ await cloudSendMessage(chatSendPayload({text:t})); try{bumpActivity(1,'messages');}catch(e){} renderChat(); }catch(e){ toast('Invio non riuscito: '+(e.message||e)); } }
 /* ===== Messaggi non letti (pallino) + visualizzato (spunta) ===== */
 let MSG_UNREAD=0, _chatPoll=null;
 async function cloudLoadMsgUnread(){ if(!cloudOn()||!cloudUser){MSG_UNREAD=0;return 0;} try{ const {count,error}=await SB.from('messages').select('id',{count:'exact',head:true}).eq('to_id',cloudUser.id).eq('read',false).is('group_id',null); if(error)throw error; MSG_UNREAD=count||0; }catch(e){} return MSG_UNREAD; }
@@ -4056,7 +4067,7 @@ function composeUserPost(){ if(!(cloudOn()&&loggedIn())){toast('Accedi per pubbl
         let {error}=await SB.from('posts').insert(row);
         if(error&&/column/.test(error.message||'')){ delete row.is_image; const r2=await SB.from('posts').insert(row); error=r2.error; }
         if(error)throw error;
-        try{bumpActivity(3);}catch(e){} toast('Post pubblicato ✓'); if(curScreen==='community'){ const t=(document.getElementById('com-body')||{}).dataset; renderComBody((t&&t.t)||'perte'); }
+        try{bumpActivity(3,'posts');}catch(e){} toast('Post pubblicato ✓'); if(curScreen==='community'){ const t=(document.getElementById('com-body')||{}).dataset; renderComBody((t&&t.t)||'perte'); }
       }catch(e){ toast('Errore: '+(e.message||e)); } } });
 }
 function communityHTML(){
@@ -4184,7 +4195,7 @@ function renderComments(pid){ const el=document.getElementById('cmt-list'); if(!
   cloudLoadComments(pid).then(list=>{ el.innerHTML=list.length?list.map(c=>{ const a=AV(c.user_id); return `<div class="row" style="padding:8px 0"><div class="ri" style="width:34px;height:34px;flex:0 0 34px;border-radius:11px;background:var(--mint);color:var(--green-d);font-weight:800;overflow:hidden;padding:0;display:flex;align-items:center;justify-content:center;font-size:13px">${a?avFill(a):((c.author||'U').trim()[0]||'U').toUpperCase()}</div><div class="rt"><b style="color:var(--green-d);font-size:12px">@${(c.author||'utente')}</b><small style="white-space:normal">${(c.text||'').replace(/</g,'&lt;')}</small></div></div>`; }).join(''):'<div class="sub" style="text-align:center;padding:16px">Nessun commento. Scrivi il primo!</div>'; });
 }
 async function sendComment(pid){ const el=document.getElementById('cmt-in'); const t=(el&&el.value||'').trim(); if(!t)return; if(!(cloudOn()&&loggedIn())){toast('Accedi per commentare');return;} el.value='';
-  try{ await cloudAddComment(pid,t); COMMENT_COUNTS[pid]=(COMMENT_COUNTS[pid]||0)+1; if(_cmtOwner)cloudNotify(_cmtOwner,'comment',{post_id:pid,text:t}); try{bumpActivity(1);}catch(e){} renderComments(pid); }catch(e){ toast('Errore: '+(e.message||e)); } }
+  try{ await cloudAddComment(pid,t); COMMENT_COUNTS[pid]=(COMMENT_COUNTS[pid]||0)+1; if(_cmtOwner)cloudNotify(_cmtOwner,'comment',{post_id:pid,text:t}); try{bumpActivity(1,'comments');}catch(e){} renderComments(pid); }catch(e){ toast('Errore: '+(e.message||e)); } }
 function likeRealPost(id,cur,btn){ cloudLikePost(id,cur); btn.innerHTML='<span>❤️</span><span class="cnt">'+fmt((cur||0)+1)+'</span>'; }
 /* ===== EDITOR VIDEO + BOZZE ===== */
 let DRAFTS=[], MYSHORTS=[];
