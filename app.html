@@ -655,7 +655,7 @@ function cloudInit(){
 function cloudOn(){ return !!SB; }
 function loggedIn(){ return !!cloudUser; }
 const OWNER_EMAIL="aurea.wellness.app@gmail.com";
-const APP_VERSION="v62";
+const APP_VERSION="v64";
 const POLICY_VERSION="2026-07-01"; // aggiornare a ogni modifica di Termini/Privacy
 function isAdmin(){ return !!(cloudUser && (cloudUser.email||'').toLowerCase()===OWNER_EMAIL); }
 // registro consensi (tracciabilità GDPR)
@@ -1177,7 +1177,8 @@ const PRO_NAV=[
   {id:'profilo',icn:'user',l:'Profilo'}
 ];
 function renderNav(){
-  const list=isProMode()?PRO_NAV:NAV;
+  let list=isProMode()?PRO_NAV:NAV;
+  if(isProMode()){ const seller=isAdmin()||/fornitore/i.test((S.pro&&S.pro.profession)||''); if(!seller){ list=list.filter(n=>n.id!=='shop'); } }
   document.getElementById('nav').innerHTML=list.map(n=>
     `<button data-t="${n.id}" onclick="${n.menu?'openMenu()':`go('${n.id}')`}"><span class="ni">${ic(n.icn,23)}</span>${n.l}</button>`
   ).join('');
@@ -2324,8 +2325,13 @@ function docModes(name){
   if(tags.some(t=>/studio|palestra|presenza/i.test(t)))modes.push('In studio');
   return modes.length?modes:['Online','In studio'];
 }
+function bookHasMode(name,mkey){ return docAvail(name).some(d=>normTimes(d.times).some(s=>(slotMode(s)===mkey||slotMode(s)==='both')&&!slotTaken(name,d.date,slotTime(s)))); }
 function openBooking(name,spec,ic,proId){
-  const modes=docModes(name); S._bk={name,spec,ic,proId:proId||null,date:null,mode:modes[0],modes}; drawBooking();
+  const modes=docModes(name);
+  let mode=modes[0];
+  const order=[['Online','video'],['In studio','studio']];
+  for(const pair of order){ if(modes.includes(pair[0])&&bookHasMode(name,pair[1])){ mode=pair[0]; break; } }
+  S._bk={name,spec,ic,proId:proId||null,date:null,mode:mode,modes:modes}; drawBooking();
 }
 function setBookMode(m){ S._bk.mode=m; drawBooking(); }
 function drawBooking(){
@@ -2334,7 +2340,8 @@ function drawBooking(){
   let avail=docAvail(bk.name).map(d=>({...d,times:normTimes(d.times).filter(s=>(slotMode(s)===wantMode||slotMode(s)==='both')&&!slotTaken(bk.name,d.date,slotTime(s))).map(slotTime)})).filter(d=>d.times.length);
   const box=document.createElement('div'); box.id='book-panel'; box.style.cssText='position:absolute;inset:0;z-index:60;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
   let body;
-  if(!avail.length){ body=`<div style="text-align:center;padding:24px 8px"><div style="font-size:40px">📅</div><div class="sub">Nessuna disponibilità al momento. Riprova più tardi.</div></div>`; }
+  if(!avail.length){ const otherKey=wantMode==='video'?'studio':'video'; const otherLbl=wantMode==='video'?'In studio':'Online'; const otherHas=(bk.modes||[]).includes(otherKey==='studio'?'In studio':'Online')&&bookHasMode(bk.name,otherKey);
+    body=`<div style="text-align:center;padding:24px 8px"><div style="font-size:40px">📅</div><div class="sub">Nessun orario ${bk.mode==='In studio'?'in studio':'in videochiamata'} disponibile.${otherHas?` Prova a cambiare tipo di visita in <b>${otherLbl==='Online'?'💻 Online':'🏥 In studio'}</b> qui sopra.`:' Riprova più tardi.'}</div></div>`; }
   else if(!bk.date){
     body=`<div class="sub" style="margin-bottom:10px">Scegli un <b>giorno</b> disponibile:</div>
     <div style="display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto">
@@ -2953,6 +2960,26 @@ function disponibilitaHTML(){
   <button class="btn" style="margin-top:12px;background:var(--green);box-shadow:none;font-size:16px;padding:15px" onclick="publishAvail()">✅ Pubblica disponibilità</button>
   <div id="avail-status">${nSlot?`<div class="alert ok" style="margin-top:12px"><span>✅</span><div><b>${nSlot} ${nSlot===1?'orario':'orari'}.</b> Premi <b>Pubblica</b> per confermare che i clienti possano prenotarti.</div></div>`:''}</div>`;
 }
+// Scrive la scheda pubblica del professionista (compresa la disponibilità) e SEGNALA gli errori veri.
+async function cloudPublishAvail(){
+  if(!(cloudOn()&&cloudUser)) throw new Error('Non sei in modalità reale');
+  const prow={ id:cloudUser.id, name:S.pro.name||S.user.name, profession:S.pro.profession||'', ic:S.pro.ic||'👤', price:S.pro.price||'€—', ente:S.pro.ente||'', followers:S.pro.followers||0, modes:['Online','In studio'], avail:S.pro.avail||[], recommends:S.pro.recommends||[], status:S.pro.status||'in_verifica', updated_at:new Date().toISOString() };
+  if(S.user&&S.user.avatar) prow.avatar=S.user.avatar;
+  let {error}=await SB.from('pros').upsert(prow);
+  // se manca una colonna opzionale la tolgo e riprovo (ma NON avail, che è essenziale)
+  let guard=0;
+  while(error && /column|could not find|schema cache/i.test(error.message||'') && guard<4){
+    guard++;
+    const msg=error.message||'';
+    let dropped=false;
+    ['avatar','recommends','modes'].forEach(k=>{ if(new RegExp('\\b'+k+'\\b','i').test(msg) && (k in prow)){ delete prow[k]; dropped=true; } });
+    if(/\bavail\b/i.test(msg)){ throw new Error('La tabella "pros" non ha la colonna "avail". Esegui lo script SQL che ti ho dato (aggiunge la colonna) e ripubblica.'); }
+    if(!dropped) break;
+    const r=await SB.from('pros').upsert(prow); error=r.error;
+  }
+  if(error) throw error;
+  _docsLoaded=false; // così i clienti ricaricano la scheda aggiornata
+}
 async function publishAvail(){
   const n=((S.pro&&S.pro.avail)||[]).reduce((a,d)=>a+normTimes(d.times).length,0);
   if(!n){ toast('Aggiungi almeno un orario prima di pubblicare'); return; }
@@ -2960,9 +2987,10 @@ async function publishAvail(){
   const setStatus=(cls,ic,msg)=>{ document.querySelectorAll('#avail-status').forEach(st=>{ st.innerHTML='<div class="alert '+cls+'" style="margin-top:12px"><span>'+ic+'</span><div>'+msg+'</div></div>'; }); };
   if(cloudOn()&&cloudUser){
     setStatus('info','⏳','Pubblicazione in corso…');
-    try{ await cloudSaveProfile(); toast('✅ Disponibilità pubblicate · i clienti possono prenotarti');
-      setStatus('ok','✅','<b>Pubblicate!</b> '+n+' '+(n===1?'orario è':'orari sono')+' visibili ai clienti in fase di prenotazione.');
-    }catch(e){ toast('Salvate sul dispositivo · '+((e&&e.message)||e)); setStatus('warn','⚠️','Salvate sul dispositivo, ma non ho potuto inviarle al cloud: '+((e&&e.message)||e)); }
+    try{ await cloudPublishAvail(); toast('✅ Disponibilità pubblicate · i clienti possono prenotarti');
+      const okNote=(S.pro.status==='verificato')?'':' <b>Nota:</b> compari ai clienti solo quando il tuo profilo è <b>verificato</b>.';
+      setStatus('ok','✅','<b>Pubblicate!</b> '+n+' '+(n===1?'orario è':'orari sono')+' salvati sul cloud.'+okNote);
+    }catch(e){ toast('Non pubblicate: '+((e&&e.message)||e)); setStatus('warn','⚠️','<b>Non ho potuto pubblicare sul cloud:</b> '+((e&&e.message)||e)); }
   } else {
     toast('Salvate. Accedi alla modalità reale (cloud) per renderle visibili ai clienti');
     setStatus('warn','⚠️','Orari salvati sul dispositivo. Per renderli visibili ai clienti devi <b>accedere alla modalità reale</b> (Profilo → Attiva modalità reale).');
