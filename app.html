@@ -212,10 +212,18 @@ body{
 .alert b{font-weight:800}
 
 /* chat */
-.chat{display:flex;flex-direction:column;gap:10px}
-.msg{max-width:82%;padding:11px 14px;border-radius:16px;font-size:13.5px;line-height:1.45}
-.msg.ai{background:var(--card);box-shadow:var(--shadow);align-self:flex-start;border-bottom-left-radius:5px}
-.msg.me{background:var(--green);color:#fff;align-self:flex-end;border-bottom-right-radius:5px}
+.chat{display:flex;flex-direction:column;gap:7px}
+#chat-thread{background:#e7ded3;background-image:radial-gradient(rgba(0,0,0,.03) 1px,transparent 1px);background-size:16px 16px;padding:12px 10px;border-radius:16px}
+.msg{position:relative;max-width:82%;padding:7px 10px 6px;border-radius:12px;font-size:13.5px;line-height:1.4;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+.msg.ai{background:#fff;color:var(--ink);align-self:flex-start;border-top-left-radius:4px}
+.msg.me{background:#128C4B;color:#fff;align-self:flex-end;border-top-right-radius:4px}
+.msg .msg-txt{white-space:pre-wrap;word-break:break-word}
+.msg-meta{float:right;margin:6px 0 -2px 10px;font-size:10px;line-height:1;display:inline-flex;align-items:center;gap:3px;opacity:.85}
+.msg.ai .msg-meta{color:var(--muted)}
+.msg.me .msg-meta{color:rgba(255,255,255,.85)}
+.msg-tick{font-weight:700}
+.msg.me .msg-tick{color:rgba(255,255,255,.8)}
+.msg.me .msg-tick.read{color:#ffffff;text-shadow:0 0 1px rgba(0,0,0,.15)}
 .chatbar{display:flex;gap:8px;margin-top:12px}
 .chatbar input{flex:1;border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:13.5px;outline:none}
 .chatbar button{background:var(--green);border:none;color:#fff;border-radius:14px;width:48px;font-size:20px;cursor:pointer}
@@ -1099,7 +1107,7 @@ function ic(name,size){ size=size||22; const p=ICONS[name]||ICONS.grid; return `
 
 /* ===== FINESTRE MODALI (al posto dei prompt del browser) ===== */
 function modalSheet(inner){
-  const box=document.createElement('div'); box.className='app-modal'; box.style.cssText='position:absolute;inset:0;z-index:200;background:rgba(20,18,16,.5);display:flex;align-items:flex-end';
+  const box=document.createElement('div'); box.className='app-modal'; box.style.cssText='position:absolute;inset:0;z-index:245;background:rgba(20,18,16,.5);display:flex;align-items:flex-end';
   box.innerHTML=`<div class="app-modal-card" style="background:#fff;width:100%;border-radius:24px 24px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:90%;overflow-y:auto">${inner}</div>`;
   box.onclick=(ev)=>{ if(ev.target===box)box.remove(); };
   const ed=document.getElementById('editor');
@@ -2237,8 +2245,14 @@ async function cloudLoadDocs(){ if(!cloudOn()){CLOUD_DOCS=[];return [];}
     return CLOUD_DOCS; }catch(e){ return CLOUD_DOCS; } }
 async function cloudLoadAllPros(){ if(!cloudOn())return []; try{ const {data,error}=await SB.from('pros').select('*').order('updated_at',{ascending:false}); if(error)throw error; return data||[]; }catch(e){ return []; } }
 function docReviews(name){return (S.docReviews&&S.docReviews[name])||[];}
-function docRating(d){const ur=docReviews(d.n);const base=parseFloat(d.r)||5;if(!ur.length)return base.toFixed(1);const sum=base*d.nr+ur.reduce((a,b)=>a+b.stars,0);return (sum/(d.nr+ur.length)).toFixed(1);}
-function docReviewCount(d){return d.nr+docReviews(d.n).length;}
+/* ===== Recensioni reali (cloud) dei professionisti ===== */
+let REVIEWS_AGG={};
+async function cloudLoadReviewAgg(ids){ if(!cloudOn()||!ids||!ids.length)return; try{ const {data,error}=await SB.from('reviews').select('pro_id,stars').in('pro_id',ids); if(error)throw error; ids.forEach(id=>{ delete REVIEWS_AGG[id]; }); (data||[]).forEach(r=>{ const a=REVIEWS_AGG[r.pro_id]||(REVIEWS_AGG[r.pro_id]={sum:0,count:0}); a.sum+=(r.stars||0); a.count++; }); }catch(e){} }
+async function cloudAddReview(proId,stars,text){ if(!(cloudOn()&&loggedIn()))throw new Error('Accedi per recensire'); const {error}=await SB.from('reviews').upsert({pro_id:proId,user_id:cloudUser.id,user_name:(S.user.name||'utente'),stars:stars,text:text||'',created_at:new Date().toISOString()}); if(error){ if(/relation|does not exist|schema cache|could not find the table/i.test(error.message||''))throw new Error('Manca la tabella "reviews": esegui lo script SQL delle recensioni.'); throw error; } }
+async function cloudLoadReviewsFor(proId){ if(!cloudOn()||!proId)return []; try{ const {data,error}=await SB.from('reviews').select('*').eq('pro_id',proId).order('created_at',{ascending:false}).limit(50); if(error)throw error; return data||[]; }catch(e){ return []; } }
+function ratingFor(d){ const a=d&&d.id&&REVIEWS_AGG[d.id]; return (a&&a.count)?{avg:a.sum/a.count,count:a.count}:null; }
+function docRating(d){const c=ratingFor(d);if(c)return c.avg.toFixed(1);const ur=docReviews(d.n);const base=parseFloat(d.r)||5;if(!ur.length)return base.toFixed(1);const sum=base*d.nr+ur.reduce((a,b)=>a+b.stars,0);return (sum/(d.nr+ur.length)).toFixed(1);}
+function docReviewCount(d){const c=ratingFor(d);if(c)return c.count;return d.nr+docReviews(d.n).length;}
 function stars(n){n=Math.round(n);return '★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(0,5-n);}
 const SPECS=["Tutti","Nutrizionista","Psicologa","Diabetologo","Dermatologo","Ginecologo","Endocrinologo","Trainer"];
 function prenotaHTML(){
@@ -2635,15 +2649,21 @@ function renderDocs(filter){
       <div style="display:flex;flex-direction:column;gap:6px;align-self:center">
         ${d.me?`<button class="btn sm sec" style="width:auto;padding:9px 12px" onclick="go('pro')">Gestisci</button>`:`<button class="btn sm" style="width:auto;padding:9px 12px" onclick="openBooking('${d.n.replace(/'/g,'')}','${d.s.replace(/'/g,'')}','${d.ic}','${d.id||''}')">Prenota</button>
         <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="openChatWith('${d.id||''}','${d.n.replace(/'/g,'')}')">💬 Messaggia</button>
-        <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="rateDoctor('${d.n.replace(/'/g,'')}')">⭐ Valuta</button>`}
+        <button class="btn sm sec" style="width:auto;padding:8px 12px;font-size:12px" onclick="rateDoctor('${d.n.replace(/'/g,'')}','${d.id||''}')">⭐ Valuta</button>`}
       </div>
       ${(()=>{const recos=docRecos(d).map(n=>allProducts().find(p=>p.n===n)).filter(Boolean); return recos.length?`<div style="width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"><div class="sub" style="font-size:11px;margin-bottom:6px">🛍️ Prodotti consigliati da ${d.n.split(' ')[0]}:</div><div style="display:flex;gap:8px;overflow-x:auto">${recos.map(p=>`<div style="flex:0 0 auto;background:var(--mint);border-radius:12px;padding:8px 10px;display:flex;align-items:center;gap:6px"><span>${p.ic||'💊'}</span><div style="font-size:11px"><b>${p.n}</b><br>€${(+p.p).toFixed(2)}</div><button class="add" style="width:26px;height:26px;font-size:16px" onclick="addCartByName('${p.n.replace(/'/g,"\\'")}')">＋</button></div>`).join('')}</div></div>`:'';})()}
     </div>`).join('');
 }
-function rateDoctor(name){
-  openForm({title:'Valuta '+name,
-    fields:[{id:'st',label:'Voto',type:'select',value:'5 ★★★★★',options:['5 ★★★★★','4 ★★★★','3 ★★★','2 ★★','1 ★']},{id:'tx',label:'Recensione (facoltativa)',type:'textarea',ph:'La tua esperienza…'}],
-    submit:'Pubblica recensione',
+function rateDoctor(name,proId){
+  const fields=[{id:'st',label:'Voto',type:'select',value:'5 ★★★★★',options:['5 ★★★★★','4 ★★★★','3 ★★★','2 ★★','1 ★']},{id:'tx',label:'Recensione (facoltativa)',type:'textarea',ph:'La tua esperienza…'}];
+  if(proId && cloudOn() && loggedIn()){
+    openForm({title:'Valuta '+name,subtitle:'La tua stella è pubblica e visibile a tutti',fields,submit:'Pubblica recensione',
+      onSubmit:async(v)=>{ const st=Math.max(1,Math.min(5,parseInt(v.st)||0)); if(!st){toast('Voto non valido');return false;}
+        try{ await cloudAddReview(proId,st,(v.tx||'').trim()); await cloudLoadReviewAgg([proId]); renderDocs(document.querySelector('#spec-filter .chip.sel')?.textContent||'Tutti'); toast('Grazie! Recensione pubblicata ⭐'+st); }
+        catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; } }});
+    return;
+  }
+  openForm({title:'Valuta '+name,fields,submit:'Pubblica recensione',
     onSubmit:(v)=>{ const st=Math.max(1,Math.min(5,parseInt(v.st)||0)); if(!st){toast('Voto non valido');return false;}
       S.docReviews=S.docReviews||{}; (S.docReviews[name]=S.docReviews[name]||[]).unshift({stars:st,txt:(v.tx||'').trim(),by:S.user.name});
       save(); renderDocs(document.querySelector('#spec-filter .chip.sel')?.textContent||'Tutti'); toast('Grazie! Recensione pubblicata ⭐'+st); }
@@ -2949,8 +2969,10 @@ function chatMsgHtml(m,isGroup){ const me=m.from_id===cloudUser.id; let inner=''
     inner+=isImg?`<img src="${m.attachment}" style="max-width:180px;border-radius:12px;display:block;cursor:pointer;margin-bottom:${m.text?'6px':'0'}" onclick="window.open('${m.attachment}','_blank')">`:`<a href="${m.attachment}" target="_blank" style="color:inherit;text-decoration:underline">📎 Allegato</a>${m.text?'<br>':''}`; }
   if(m.text) inner+=(m.text||'').replace(/</g,'&lt;');
   const sender=(isGroup&&!me)?`<div style="font-size:10px;font-weight:700;opacity:.65;margin-bottom:2px">${(m.from_name||'Utente').replace(/</g,'&lt;')}</div>`:'';
+  let time=''; try{ if(m.created_at){ const dt=new Date(m.created_at); time=dt.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); } }catch(e){}
   const tick=(me&&!isGroup)?`<span class="msg-tick${m.read?' read':''}" title="${m.read?'Visualizzato':'Inviato'}">${m.read?'✓✓':'✓'}</span>`:'';
-  return `<div class="msg ${me?'me':'ai'}">${sender}${inner}${tick}</div>`; }
+  const meta=`<span class="msg-meta">${time}${tick}</span>`;
+  return `<div class="msg ${me?'me':'ai'}">${sender}<span class="msg-txt">${inner}</span>${meta}</div>`; }
 function renderChat(){
   if(!(cloudOn()&&loggedIn()))return;
   Promise.all([cloudLoadMessages(),cloudLoadGroups()]).then(()=>{
@@ -3031,12 +3053,53 @@ function renderPlans(){ const c=document.getElementById('plans-list'); if(!c)ret
     ${isProMode()?`<button class="btn sm sec" style="margin-top:10px;width:auto;padding:7px 12px" onclick="delClientPlan('${pl.id}')">🗑 Elimina</button>`:''}
   </div>`).join(''):`<div class="card" style="text-align:center"><div style="font-size:40px">📋</div><div class="sub">${isProMode()?'Nessun piano creato. Tocca "Nuovo piano".':'Nessun piano ricevuto per ora.'}</div></div>`; });
 }
+// Genera il testo del piano dai dati fisici del paziente (riusa il motore nutrizionale)
+function generatePlanText(pt){
+  const saved=S.nutri;
+  S.nutri={sex:pt.sex,age:pt.age,h:pt.h,w:pt.w,act:pt.act,goal:pt.goal,pace:pt.pace,dietLbl:pt.dietLbl,diet:(pt.dietLbl||'Onnivoro').toLowerCase(),exclude:pt.exclude||[],variant:0};
+  let out='';
+  try{
+    const p=ntPlan(); const day=ntDay(p.kcal);
+    out+='FABBISOGNO GIORNALIERO: '+p.kcal+' kcal (mantenimento ~'+p.tdee+' kcal)\n';
+    out+=ntGoalLine(p,S.nutri).replace(/[📉📈⚖️]/g,'').trim()+'\n';
+    out+='MACRO: proteine '+p.prot+' g · carboidrati '+p.carb+' g · grassi '+p.fat+' g\n\nGIORNATA TIPO:\n';
+    day.forEach(s=>{ out+='• '+s.lbl+' ('+s.kcal+' kcal): '+s.items.map(it=>it.name+' '+it.g+'g').join(', ')+'\n'; });
+  }catch(e){ out+='(pasti non generabili: controlla i dati fisici)\n'; }
+  S.nutri=saved;
+  return out;
+}
 function addClientPlan(){ if(!canPlan()){toast('Non abilitato ai piani nutrizionali');return;}
-  openForm({title:'Nuovo piano nutrizionale',subtitle:'Verrà inviato al cliente',
-    fields:[{id:'title',label:'Titolo del piano',ph:'es. Piano dimagrimento 4 settimane'},{id:'email',label:'Email del cliente'},{id:'content',label:'Contenuto del piano',type:'textarea',ph:'Colazione…\nPranzo…\nCena…'}],
-    submit:'Crea e invia',
-    onSubmit:async(v)=>{ if(!v.title||!v.title.trim()){toast('Inserisci il titolo');return false;} if(!v.email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())){toast('Email cliente non valida');return false;}
-      try{ const {error}=await SB.from('plans').insert({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name,client_email:v.email.trim().toLowerCase(),title:v.title.trim(),content:(v.content||'').trim()}); if(error)throw error; renderPlans(); toast('Piano creato e inviato ✓'); }catch(e){ toast('Errore: '+(e.message||e)); }
+  openForm({title:'Nuovo piano nutrizionale',subtitle:'Inserisci i dati del paziente: il piano si genera in automatico',
+    fields:[
+      {id:'title',label:'Titolo del piano',ph:'es. Piano dimagrimento 4 settimane'},
+      {id:'email',label:'Email del paziente (per riceverlo)'},
+      {id:'pname',label:'Nome del paziente'},
+      {id:'sex',label:'Sesso',type:'select',options:['Donna','Uomo']},
+      {id:'age',label:'Età',type:'number'},
+      {id:'h',label:'Altezza (cm)',type:'number'},
+      {id:'w',label:'Peso (kg)',type:'number'},
+      {id:'act',label:'Livello di attività',type:'select',options:Object.keys(NT_ACT),value:'Moderato (3-4 allenamenti/sett)'},
+      {id:'goal',label:'Obiettivo',type:'select',options:['Dimagrire','Mantenere','Aumentare'],value:'Mantenere'},
+      {id:'pace',label:'Ritmo (se dimagrire/aumentare)',type:'select',options:['Lento e sostenibile','Moderato','Deciso','Veloce'],value:'Moderato'},
+      {id:'diet',label:'Regime alimentare',type:'select',options:['Onnivoro','Vegetariano','Vegano'],value:'Onnivoro'},
+      {id:'exclude',label:'Allergie / alimenti da escludere',type:'textarea',ph:'es. lattosio, glutine, frutta secca'},
+      {id:'health',label:'Dati di salute del paziente',type:'textarea',ph:'Patologie, farmaci, valori, note cliniche…'},
+      {id:'notes',label:'Note e indicazioni del professionista',type:'textarea',ph:'Aggiustamenti, integrazione, consigli…'}
+    ],
+    submit:'Genera e invia',
+    onSubmit:async(v)=>{
+      if(!v.title||!v.title.trim()){toast('Inserisci il titolo');return false;}
+      if(!v.email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())){toast('Email paziente non valida');return false;}
+      const age=parseInt(v.age),h=parseFloat(v.h),w=parseFloat(v.w);
+      if(!age||!h||!w){toast('Inserisci età, altezza e peso del paziente');return false;}
+      const pt={sex:v.sex==='Uomo'?'M':'F',age,h,w,act:v.act,goal:v.goal,pace:v.pace,dietLbl:v.diet,exclude:(v.exclude||'').split(',').map(s=>s.trim()).filter(Boolean)};
+      const head='PAZIENTE: '+((v.pname||'').trim()||'—')+' · '+(v.sex||'')+' · '+age+' anni · '+h+' cm · '+w+' kg\n'
+        +'Attività: '+v.act+' · Obiettivo: '+v.goal+' · Regime: '+v.diet+(pt.exclude.length?(' · senza '+pt.exclude.join(', ')):'')+'\n'
+        +((v.health||'').trim()?('DATI DI SALUTE: '+(v.health||'').trim()+'\n'):'')+'\n';
+      const body=generatePlanText(pt);
+      const notes=(v.notes||'').trim()?('\nNOTE DEL PROFESSIONISTA:\n'+(v.notes||'').trim()):'';
+      const content=head+body+notes;
+      try{ const {error}=await SB.from('plans').insert({pro_id:cloudUser.id,pro_name:(S.pro&&S.pro.name)||S.user.name,client_email:v.email.trim().toLowerCase(),title:v.title.trim(),content:content}); if(error)throw error; renderPlans(); toast('Piano generato e inviato ✓'); }catch(e){ toast('Errore: '+((e&&e.message)||e)); return false; }
     }
   });
 }
@@ -5436,7 +5499,7 @@ function afterRender(id){
   if(id==='prenota'){
     if(isProMode()){ renderProAgenda(); }
     else { renderMyAppts();renderDocs('Tutti');
-      if(cloudOn()&&!_docsLoaded&&!_docsFetching){ _docsFetching=true; cloudLoadDocs().then(()=>{ _docsLoaded=true; _docsFetching=false; if(curScreen==='prenota')renderDocs('Tutti'); }); }
+      if(cloudOn()&&!_docsLoaded&&!_docsFetching){ _docsFetching=true; cloudLoadDocs().then(async()=>{ _docsLoaded=true; _docsFetching=false; try{ await cloudLoadReviewAgg(CLOUD_DOCS.map(d=>d.id).filter(Boolean)); }catch(e){} if(curScreen==='prenota')renderDocs('Tutti'); }); }
     }
   }
   if(id==='shop'){renderCartBadge();const b=document.getElementById('shopcart');if(b){const c=cartCount();b.style.display=c?'flex':'none';b.textContent=c;}
